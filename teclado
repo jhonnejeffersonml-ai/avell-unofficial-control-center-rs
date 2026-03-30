@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+# Atalho rápido para abrir a TUI do Avell Unofficial Control Center.
+# Compila o binário Rust automaticamente se ainda não estiver disponível.
+
+set -euo pipefail
+
+DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+RUST_UI="$DIR/aucc-rs/target/release/aucc-ui"
+
+if [ ! -x "$RUST_UI" ]; then
+    echo "[!] Binário não encontrado. Compilando aucc-rs..."
+    cd "$DIR/aucc-rs"
+    cargo build --release
+    cd "$DIR"
+fi
+
+pkexec "$RUST_UI"

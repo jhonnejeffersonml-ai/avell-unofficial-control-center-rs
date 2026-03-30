@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE policyconfig PUBLIC
+    "-//freedesktop//DTD PolicyKit Policy Configuration 1.0//EN"
+    "http://www.freedesktop.org/standards/PolicyKit/1/policyconfig.dtd">
+
+<!--
+  Polkit policy for Avell Custom Control Center (aucc-rs)
+
+  Allows members of the local active session to run the aucc binaries via
+  pkexec without a password prompt. Required for power profile switching
+  (RAPL PL1/PL2, CPU governor, EPP) which needs root access.
+
+  Install:
+    sudo cp org.avell.aucc.policy /usr/share/polkit-1/actions/
+-->
+
+<policyconfig>
+
+  <action id="org.avell.aucc.run-ui">
+    <description>Run Avell Custom Control Center (TUI)</description>
+    <message>Authentication is required to control hardware power profiles</message>
+    <defaults>
+      <allow_any>no</allow_any>
+      <allow_inactive>no</allow_inactive>
+      <allow_active>yes</allow_active>
+    </defaults>
+    <annotate key="org.freedesktop.policykit.exec.path">/usr/local/bin/aucc-ui</annotate>
+    <annotate key="org.freedesktop.policykit.exec.allow_gui">true</annotate>
+  </action>
+
+  <action id="org.avell.aucc.run-cli">
+    <description>Run Avell Custom Control Center (CLI)</description>
+    <message>Authentication is required to control hardware power profiles</message>
+    <defaults>
+      <allow_any>no</allow_any>
+      <allow_inactive>no</allow_inactive>
+      <allow_active>yes</allow_active>
+    </defaults>
+    <annotate key="org.freedesktop.policykit.exec.path">/usr/local/bin/aucc</annotate>
+    <annotate key="org.freedesktop.policykit.exec.allow_gui">false</annotate>
+  </action>
+
+</policyconfig>

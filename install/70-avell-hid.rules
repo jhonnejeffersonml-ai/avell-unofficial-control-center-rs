@@ -1,0 +1,23 @@
+# udev rules for Avell Storm 470 (TongFang chassis) HID devices
+#
+# Grants read/write access to members of the 'plugdev' group so that
+# keyboard RGB and lightbar control work WITHOUT root privileges.
+#
+# Install:
+#   sudo cp 70-avell-hid.rules /etc/udev/rules.d/
+#   sudo udevadm control --reload-rules && sudo udevadm trigger
+#
+# Then add your user to plugdev (if not already):
+#   sudo usermod -aG plugdev $USER   # log out and back in to apply
+
+# ITE Device 8291 — RGB Keyboard (048d:600b)
+SUBSYSTEM=="usb", ATTRS{idVendor}=="048d", ATTRS{idProduct}=="600b", \
+    GROUP="plugdev", MODE="0660", TAG+="uaccess"
+
+# ITE Device 8233 — Front LED Lightbar (048d:7001)
+SUBSYSTEM=="hidraw", ATTRS{idVendor}=="048d", ATTRS{idProduct}=="7001", \
+    GROUP="plugdev", MODE="0660", TAG+="uaccess", \
+    RUN+="/usr/local/bin/aucc --lb-restore"
+
+SUBSYSTEM=="usb", ATTRS{idVendor}=="048d", ATTRS{idProduct}=="7001", \
+    GROUP="plugdev", MODE="0660", TAG+="uaccess"
