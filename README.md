@@ -1,6 +1,9 @@
 # avell-unofficial-control-center
 
 [![Gitter](https://badges.gitter.im/Unofficial-CC/Lobby.svg)](https://gitter.im/Unofficial-CC/Lobby?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge)
+![Rust](https://img.shields.io/badge/built%20with-Rust-orange?logo=rust)
+
+> **This project is written in [Rust](https://www.rust-lang.org/)** 🦀, using `rusb`/`libusb` for USB HID communication and `ratatui` for the interactive terminal UI.
 
 Linux userspace driver and control tool for RGB LED keyboards and front LED lightbars found in Avell gaming laptops and other devices using the **Integrated Technology Express ITE Device(8291) Rev 0.03** controller.
 
