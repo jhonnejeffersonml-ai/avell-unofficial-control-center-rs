@@ -59,10 +59,21 @@ O script faz automaticamente:
 
 ## Instalação com binário pré-compilado
 
-Se você já tem os binários compilados (`aucc-rs/target/release/`):
+Baixe `aucc` e `aucc-ui` na [página de releases](https://github.com/jhonnejeffersonml-ai/avell-unofficial-control-center-rs/releases) e execute:
 
 ```bash
-sudo ./install/install.sh --skip-build
+# Instala aucc (copia para /usr/local/bin + instala regras udev)
+sudo ./aucc --install
+
+# Instala aucc-ui (copia para /usr/local/bin)
+sudo ./aucc-ui --install
+```
+
+Para desinstalar:
+
+```bash
+sudo aucc --uninstall      # remove regras udev + /usr/local/bin/aucc
+sudo aucc-ui --uninstall   # remove /usr/local/bin/aucc-ui
 ```
 
 ---

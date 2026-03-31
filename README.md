@@ -119,6 +119,25 @@ The install script:
 5. Creates `/etc/aucc/` for lightbar persistence config
 6. Adds user to the `plugdev` group
 
+### Install from pre-built binaries
+
+Download `aucc` and `aucc-ui` from the [releases page](https://github.com/jhonnejeffersonml-ai/avell-unofficial-control-center-rs/releases) and run:
+
+```bash
+# Install aucc (copies binary to /usr/local/bin + installs udev rules)
+sudo ./aucc --install
+
+# Install aucc-ui (copies binary to /usr/local/bin)
+sudo ./aucc-ui --install
+```
+
+To uninstall:
+
+```bash
+sudo aucc --uninstall      # removes udev rules + /usr/local/bin/aucc
+sudo aucc-ui --uninstall   # removes /usr/local/bin/aucc-ui
+```
+
 ### Enable lightbar boot restore
 
 After installation, activate automatic lightbar state restore on boot:
@@ -274,7 +293,7 @@ is not yet fully documented.
 - ✅ `teclado` launcher script (pkexec-based, no sudo prompt)
 - ✅ **Power profiles** — Silent / Balanced / Turbo (RAPL PL1/PL2 + CPU governor + EPP)
 - ✅ **Telemetry dashboard** — CPU/GPU/RAM/NVMe/Battery in real-time (TUI)
-- ✅ `--install` / `--uninstall` — manage udev rules directly from the binary
+- ✅ `--install` / `--uninstall` — instala/remove binários em `/usr/local/bin/` e gerencia regras udev diretamente pelo binário
 
 ### Known Limitations
 
