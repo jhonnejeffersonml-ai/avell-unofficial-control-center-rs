@@ -159,11 +159,12 @@ struct Cli {
 
     // ── Instalação ────────────────────────────────────────────────────────────
 
-    /// Instalar regra udev para restauração automática da lightbar no boot
+    /// Instalar regra udev e copiar o binário para /usr/local/bin/aucc
     ///
-    /// Escreve /etc/udev/rules.d/70-avell-hid.rules, cria /etc/aucc/ e
-    /// recarrega o udev. Após isso, a lightbar será restaurada automaticamente
-    /// sempre que o sistema iniciar. Requer root (sudo).
+    /// Escreve /etc/udev/rules.d/70-avell-hid.rules, cria /etc/aucc/,
+    /// recarrega o udev e copia este binário para /usr/local/bin/aucc.
+    /// Após isso, a lightbar será restaurada automaticamente sempre que o
+    /// sistema iniciar. Requer root (sudo).
     #[arg(long)]
     install: bool,
 
@@ -259,6 +260,8 @@ SUBSYSTEM==\"usb\", ATTRS{idVendor}==\"048d\", ATTRS{idProduct}==\"7001\", \\
 
 const UDEV_RULE_PATH: &str = "/etc/udev/rules.d/70-avell-hid.rules";
 
+const INSTALL_BIN_PATH: &str = "/usr/local/bin/aucc";
+
 fn run_setup(install: bool) -> Result<(), Box<dyn std::error::Error>> {
     use std::fs;
     use std::process::Command;
@@ -277,6 +280,11 @@ fn run_setup(install: bool) -> Result<(), Box<dyn std::error::Error>> {
         if !trigger.success() { return Err("udevadm trigger falhou".into()); }
 
         println!("{}", "udev recarregado. Lightbar será restaurada automaticamente no próximo boot.".green());
+
+        let current_exe = std::env::current_exe()?;
+        fs::copy(&current_exe, INSTALL_BIN_PATH)?;
+        println!("{}", format!("Binário instalado: {INSTALL_BIN_PATH}").green());
+
         println!("  Dica: adicione seu usuário ao grupo plugdev se ainda não estiver:");
         println!("  sudo usermod -aG plugdev $USER   (faça logout e login para ter efeito)");
     } else {
@@ -290,6 +298,13 @@ fn run_setup(install: bool) -> Result<(), Box<dyn std::error::Error>> {
         let reload = Command::new("udevadm").args(["control", "--reload-rules"]).status()?;
         if !reload.success() { return Err("udevadm control --reload-rules falhou".into()); }
         println!("{}", "udev recarregado. Restauração automática da lightbar desativada.".yellow());
+
+        match fs::remove_file(INSTALL_BIN_PATH) {
+            Ok(_) => println!("{}", format!("Binário removido: {INSTALL_BIN_PATH}").yellow()),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound =>
+                println!("{}", format!("Binário não encontrado em {INSTALL_BIN_PATH} (já removido?).").yellow()),
+            Err(e) => return Err(e.into()),
+        }
     }
     Ok(())
 }
