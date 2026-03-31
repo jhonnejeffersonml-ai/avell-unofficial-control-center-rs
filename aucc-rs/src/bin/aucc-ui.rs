@@ -22,10 +22,24 @@ fn install_self() {
     }
 }
 
+fn uninstall_self() {
+    require_root();
+    match std::fs::remove_file(INSTALL_BIN_PATH) {
+        Ok(_) => println!("Binário removido: {INSTALL_BIN_PATH}"),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound =>
+            println!("Binário não encontrado em {INSTALL_BIN_PATH} (já removido?)."),
+        Err(e) => { eprintln!("Erro ao remover binário: {e}"); std::process::exit(1); }
+    }
+}
+
 fn main() {
     let args: Vec<String> = std::env::args().collect();
     if args.iter().any(|a| a == "--install") {
         install_self();
+        return;
+    }
+    if args.iter().any(|a| a == "--uninstall") {
+        uninstall_self();
         return;
     }
 
