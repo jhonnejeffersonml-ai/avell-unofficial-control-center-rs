@@ -59,12 +59,15 @@ pub fn install(current_exe: &std::path::Path, bin_dest: &str) -> Result {
     let src_canonical  = fs::canonicalize(current_exe).unwrap_or_else(|_| current_exe.to_path_buf());
     let dest_canonical = fs::canonicalize(bin_dest).unwrap_or_else(|_| std::path::PathBuf::from(bin_dest));
 
-    if src_canonical != dest_canonical {
+    let bin_msg = if src_canonical != dest_canonical {
         fs::copy(current_exe, bin_dest)
             .map_err(|e| format!("Erro ao copiar binário para {bin_dest}: {e}"))?;
-    }
+        format!("binário instalado em {bin_dest}")
+    } else {
+        format!("binário NÃO atualizado (este já é o instalado — rode o novo executável e instale novamente)")
+    };
 
-    Ok(format!("Instalado em {bin_dest}  |  udev recarregado ✔"))
+    Ok(format!("udev recarregado ✔  |  {bin_msg}"))
 }
 
 pub fn uninstall(bin_dest: &str) -> Result {
