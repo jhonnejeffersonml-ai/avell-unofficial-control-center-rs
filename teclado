@@ -4,6 +4,10 @@
 
 set -euo pipefail
 
+# Ensure cargo is on PATH (rustup installs it to ~/.cargo/bin, not on $PATH by default)
+# shellcheck source=/dev/null
+[ -f "$HOME/.cargo/env" ] && source "$HOME/.cargo/env"
+
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 RUST_UI="$DIR/aucc-rs/target/release/aucc-ui"
 

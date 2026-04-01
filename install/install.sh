@@ -44,16 +44,21 @@ check_deps() {
 build_rust() {
     info "Compilando aucc-rs (Rust)..."
 
+    # When running under sudo, $HOME is /root but cargo lives in the invoking
+    # user's home. Resolve the real home via getent to avoid false-negatives.
+    local REAL_USER REAL_HOME
+    REAL_USER="${SUDO_USER:-$USER}"
+    REAL_HOME="$(getent passwd "$REAL_USER" | cut -d: -f6)"
+
     if ! command -v cargo &>/dev/null; then
-        if [ -x "$HOME/.cargo/bin/cargo" ]; then
-            export PATH="$HOME/.cargo/bin:$PATH"
+        if [ -x "$REAL_HOME/.cargo/bin/cargo" ]; then
+            export PATH="$REAL_HOME/.cargo/bin:$PATH"
         else
             warn "Cargo não encontrado. Instalando Rust toolchain via rustup..."
             # Run as the invoking user, not root
-            REAL_USER="${SUDO_USER:-$USER}"
             sudo -u "$REAL_USER" bash -c \
                 'curl --proto "=https" --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --no-modify-path'
-            export PATH="/home/$REAL_USER/.cargo/bin:$PATH"
+            export PATH="$REAL_HOME/.cargo/bin:$PATH"
         fi
     fi
 
