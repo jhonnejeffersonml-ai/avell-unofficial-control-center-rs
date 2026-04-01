@@ -2,6 +2,7 @@ use aucc_rs::config::{self, LightbarConfig};
 use aucc_rs::keyboard::{KeyboardDevice, colors::get_color, effects::{Effect, WaveDirection, effect_payload}};
 use aucc_rs::lightbar;
 use aucc_rs::power::{self, PowerProfile};
+use aucc_rs::setup;
 use clap::{ArgGroup, Parser};
 use colored::Colorize;
 
@@ -215,9 +216,15 @@ fn main() {
     // Install/uninstall udev rules: requires root
     if cli.install || cli.uninstall {
         require_root();
-        if let Err(e) = run_setup(cli.install) {
-            eprintln!("{} {e}", "Erro:".red().bold());
-            std::process::exit(1);
+        let current_exe = std::env::current_exe().unwrap_or_default();
+        let result = if cli.install {
+            setup::install(&current_exe, setup::INSTALL_BIN_PATH)
+        } else {
+            setup::uninstall(setup::INSTALL_BIN_PATH)
+        };
+        match result {
+            Ok(msg) => println!("{}", msg.green()),
+            Err(e)  => { eprintln!("{} {e}", "Erro:".red().bold()); std::process::exit(1); }
         }
         return;
     }
@@ -247,77 +254,7 @@ fn main() {
     }
 }
 
-// Udev rules content embedded in the binary so --install works standalone.
-const UDEV_RULES: &str = "\
-# udev rules for Avell Storm 470 (TongFang chassis) HID devices — managed by aucc
-#
-# Grants read/write access to members of the 'plugdev' group so that
-# keyboard RGB and lightbar control work WITHOUT root privileges.
-# The RUN+= entry restores the saved lightbar state on every boot.
-
-# ITE Device 8291 — RGB Keyboard (048d:600b)
-SUBSYSTEM==\"usb\", ATTRS{idVendor}==\"048d\", ATTRS{idProduct}==\"600b\", \\
-    GROUP=\"plugdev\", MODE=\"0660\", TAG+=\"uaccess\"
-
-# ITE Device 8233 — Front LED Lightbar (048d:7001)
-SUBSYSTEM==\"hidraw\", ATTRS{idVendor}==\"048d\", ATTRS{idProduct}==\"7001\", \\
-    GROUP=\"plugdev\", MODE=\"0660\", TAG+=\"uaccess\", \\
-    RUN+=\"/usr/local/bin/aucc --lb-restore\"
-
-SUBSYSTEM==\"usb\", ATTRS{idVendor}==\"048d\", ATTRS{idProduct}==\"7001\", \\
-    GROUP=\"plugdev\", MODE=\"0660\", TAG+=\"uaccess\"
-";
-
-const UDEV_RULE_PATH: &str = "/etc/udev/rules.d/70-avell-hid.rules";
-
-const INSTALL_BIN_PATH: &str = "/usr/local/bin/aucc";
-
-fn run_setup(install: bool) -> Result<(), Box<dyn std::error::Error>> {
-    use std::fs;
-    use std::process::Command;
-
-    if install {
-        fs::create_dir_all("/etc/aucc")?;
-        fs::write(UDEV_RULE_PATH, UDEV_RULES)?;
-        println!("{}", format!("Regra udev instalada: {UDEV_RULE_PATH}").green());
-
-        let reload = Command::new("udevadm").args(["control", "--reload-rules"]).status()?;
-        if !reload.success() { return Err("udevadm control --reload-rules falhou".into()); }
-
-        let trigger = Command::new("udevadm")
-            .args(["trigger", "--subsystem-match=usb", "--subsystem-match=hidraw"])
-            .status()?;
-        if !trigger.success() { return Err("udevadm trigger falhou".into()); }
-
-        println!("{}", "udev recarregado. Lightbar será restaurada automaticamente no próximo boot.".green());
-
-        let current_exe = std::env::current_exe()?;
-        fs::copy(&current_exe, INSTALL_BIN_PATH)?;
-        println!("{}", format!("Binário instalado: {INSTALL_BIN_PATH}").green());
-
-        println!("  Dica: adicione seu usuário ao grupo plugdev se ainda não estiver:");
-        println!("  sudo usermod -aG plugdev $USER   (faça logout e login para ter efeito)");
-    } else {
-        // uninstall
-        match fs::remove_file(UDEV_RULE_PATH) {
-            Ok(_) => println!("{}", format!("Regra udev removida: {UDEV_RULE_PATH}").yellow()),
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound =>
-                println!("{}", "Regra udev não encontrada (já removida?).".yellow()),
-            Err(e) => return Err(e.into()),
-        }
-        let reload = Command::new("udevadm").args(["control", "--reload-rules"]).status()?;
-        if !reload.success() { return Err("udevadm control --reload-rules falhou".into()); }
-        println!("{}", "udev recarregado. Restauração automática da lightbar desativada.".yellow());
-
-        match fs::remove_file(INSTALL_BIN_PATH) {
-            Ok(_) => println!("{}", format!("Binário removido: {INSTALL_BIN_PATH}").yellow()),
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound =>
-                println!("{}", format!("Binário não encontrado em {INSTALL_BIN_PATH} (já removido?).").yellow()),
-            Err(e) => return Err(e.into()),
-        }
-    }
-    Ok(())
-}
+// ── run_lightbar ──────────────────────────────────────────────────────────────
 
 fn run_lightbar(cli: &Cli) -> Result<(), Box<dyn std::error::Error>> {
     let path = lightbar::find_hidraw_path()

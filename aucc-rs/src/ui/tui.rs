@@ -25,6 +25,7 @@ use crate::keyboard::{
     effects::{Effect, WaveDirection, effect_payload},
 };
 use crate::lightbar;
+use crate::setup;
 use crate::telemetry;
 use crate::power::{self, PowerProfile};
 
@@ -336,6 +337,19 @@ impl AppState {
                         let label = if self.save_eeprom { "SIM ✔ — persistirá após reboot" } else { "NÃO — temporário" };
                         self.status = format!("Persistir: {label}");
                     }
+                    "⚙ Instalar udev + binários" => {
+                        let exe = std::env::current_exe().unwrap_or_default();
+                        match setup::install(&exe, setup::INSTALL_UI_BIN_PATH) {
+                            Ok(msg)  => self.status = format!("✔ {msg}"),
+                            Err(e)   => self.status = format!("✗ {e}"),
+                        }
+                    }
+                    "⚙ Desinstalar" => {
+                        match setup::uninstall(setup::INSTALL_UI_BIN_PATH) {
+                            Ok(msg)  => self.status = format!("✔ {msg}"),
+                            Err(e)   => self.status = format!("✗ {e}"),
+                        }
+                    }
                     "Teclado — Cor Sólida"          => { self._mode = None;        self.go_to(Screen::SolidColor, 0); self.live_preview(); }
                     "Teclado — Alternado Horizontal" => { self._mode = Some("h_alt"); self.go_to(Screen::HAltA, 0); self.live_preview(); }
                     "Teclado — Alternado Vertical"   => { self._mode = Some("v_alt"); self.go_to(Screen::VAltA, 0); self.live_preview(); }
@@ -487,6 +501,10 @@ fn main_items_dynamic(save: bool) -> Vec<&'static str> {
         "Lightbar — Desligar",
         "──────────────────",
         save_label,
+        "──────────────────",
+        "⚙ Instalar udev + binários",
+        "⚙ Desinstalar",
+        "──────────────────",
         "Sair",
     ]
 }

@@ -3,5 +3,6 @@ pub mod config;
 pub mod keyboard;
 pub mod lightbar;
 pub mod power;
+pub mod setup;
 pub mod telemetry;
 pub mod ui;
