@@ -78,6 +78,8 @@ TUI INTERATIVO:\n  \
   Restaurada automaticamente via udev quando o dispositivo é detectado.\n  \
   Para ativar: sudo aucc --install"
 )]
+// Note: "version" is in the group so that `--version` alone satisfies the required group.
+// We handle version printing manually since clap's built-in -V conflicts with -V (v_alt).
 #[command(group(ArgGroup::new("action").required(true).args(["color","h_alt","v_alt","style","disable","profile","tdp","telemetry","lb_restore","lb_disable","lb_color","version","install","uninstall"])))]
 struct Cli {
     /// Cor sólida do teclado: red, green, blue, teal, purple, pink, yellow, white, orange …
@@ -129,7 +131,7 @@ struct Cli {
     save: bool,
 
     /// Mostrar versão
-    #[arg(long, action = clap::ArgAction::Version)]
+    #[arg(long)]
     version: bool,
 
     // ── Lightbar ──────────────────────────────────────────────────────────────
@@ -186,6 +188,13 @@ fn require_root() {
 
 fn main() {
     let cli = Cli::parse();
+
+    // --version: print and exit (manual handler because clap's built-in -V
+    // conflicts with the -V short used by --v-alt)
+    if cli.version {
+        println!("aucc-rs {}", env!("CARGO_PKG_VERSION"));
+        return;
+    }
 
     // Telemetry needs no root — run before root check
     if cli.telemetry {
