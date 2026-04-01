@@ -815,7 +815,6 @@ pub fn run() -> io::Result<()> {
         }
 
         terminal.draw(|f| render(f, &mut state))?;
-        state.status.clear();
 
         let poll_ms = if state.screen == Screen::Dashboard { 500 } else { 50 };
         if event::poll(Duration::from_millis(poll_ms))? {
@@ -823,6 +822,7 @@ pub fn run() -> io::Result<()> {
                 if key.kind != KeyEventKind::Press {
                     continue;
                 }
+                state.status.clear();
                 match key.code {
                     KeyCode::Up    => state.move_cursor(-1),
                     KeyCode::Down  => state.move_cursor(1),
