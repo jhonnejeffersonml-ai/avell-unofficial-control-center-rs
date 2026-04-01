@@ -54,8 +54,15 @@ pub fn install(current_exe: &std::path::Path, bin_dest: &str) -> Result {
         .then_some(())
         .ok_or_else(|| "udevadm trigger retornou erro".to_string())?;
 
-    fs::copy(current_exe, bin_dest)
-        .map_err(|e| format!("Erro ao copiar binário para {bin_dest}: {e}"))?;
+    // Resolve canonical paths to detect self-copy (e.g. pkexec running the
+    // already-installed binary). Copying a file over itself truncates it first.
+    let src_canonical  = fs::canonicalize(current_exe).unwrap_or_else(|_| current_exe.to_path_buf());
+    let dest_canonical = fs::canonicalize(bin_dest).unwrap_or_else(|_| std::path::PathBuf::from(bin_dest));
+
+    if src_canonical != dest_canonical {
+        fs::copy(current_exe, bin_dest)
+            .map_err(|e| format!("Erro ao copiar binário para {bin_dest}: {e}"))?;
+    }
 
     Ok(format!("Instalado em {bin_dest}  |  udev recarregado ✔"))
 }
