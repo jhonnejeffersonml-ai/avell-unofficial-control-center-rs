@@ -10,6 +10,7 @@ use colored::Colorize;
     author,
     version,
     disable_version_flag = true,
+    arg_required_else_help = true,
     about = "AUCC — Avell Unofficial Control Center",
     long_about = "AUCC — Avell Unofficial Control Center\n\
 \n\
@@ -78,9 +79,9 @@ TUI INTERATIVO:\n  \
   Restaurada automaticamente via udev quando o dispositivo é detectado.\n  \
   Para ativar: sudo aucc --install"
 )]
-// Note: "version" is in the group so that `--version` alone satisfies the required group.
-// We handle version printing manually since clap's built-in -V conflicts with -V (v_alt).
-#[command(group(ArgGroup::new("action").required(true).args(["color","h_alt","v_alt","style","disable","profile","tdp","telemetry","lb_restore","lb_disable","lb_color","version","install","uninstall"])))]
+// Group is kept (without required) to document mutual exclusivity.
+// arg_required_else_help = true on the command handles the no-args case.
+#[command(group(ArgGroup::new("action").args(["color","h_alt","v_alt","style","disable","profile","tdp","telemetry","lb_restore","lb_disable","lb_color","version","install","uninstall"])))]
 struct Cli {
     /// Cor sólida do teclado: red, green, blue, teal, purple, pink, yellow, white, orange …
     #[arg(short = 'c', long, value_name = "COR")]
