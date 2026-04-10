@@ -97,10 +97,14 @@ The ITE Device(8291) controller is used in Tongfang gaming laptop barebones and 
 
 - `libusb-1.0` (system package)
 - Rust toolchain (`cargo`) — installed automatically if missing
+- `nvidia-smi` (optional) — required for GPU telemetry in `--telemetry`
 
 ```bash
 # Debian / Ubuntu / Linux Mint
 sudo apt install libusb-1.0-0
+
+# Optional: GPU telemetry (NVIDIA only)
+sudo apt install nvidia-utils-535  # or your preferred driver version
 ```
 
 ### Install (recommended)
@@ -232,11 +236,20 @@ Lightbar state is **always saved automatically** when you use `--lb-color` or `-
 #### Power profiles
 
 ```bash
-sudo aucc --profile silent     # 25W PL1 / 35W PL2
-sudo aucc --profile balanced   # 45W / 65W
-sudo aucc --profile turbo      # 80W / 120W
+sudo aucc --profile silent     # 35W PL1 / 55W PL2
+sudo aucc --profile balanced   # 55W PL1 / 100W PL2
+sudo aucc --profile turbo      # 95W PL1 / 157W PL2
 sudo aucc --tdp 45             # custom PL1 in watts
 ```
+
+| Profile | PL1 (sustained) | PL2 (burst) | Governor | EPP |
+|---|---|---|---|---|
+| Silent | 35W | 55W | powersave | power |
+| Balanced | 55W | 100W | powersave | balance_performance |
+| Turbo | 95W | 157W | performance | performance |
+
+> Values derived from Intel i9-14900HX spec (PL1 base: 55W, MTP: 157W).
+> ⚠️ PL1 > 55W requires thermal calibration with `stress-ng` + `turbostat`.
 
 #### Telemetry (no root required)
 

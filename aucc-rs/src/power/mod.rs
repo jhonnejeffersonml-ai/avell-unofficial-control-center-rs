@@ -94,7 +94,12 @@ pub fn read_limits() -> Option<PowerLimits> {
     let pl1_uw: u64 = fs::read_to_string(root.join("constraint_0_power_limit_uw"))
         .ok()?.trim().parse().ok()?;
     let pl2_uw: u64 = fs::read_to_string(root.join("constraint_1_power_limit_uw"))
-        .ok().and_then(|s| s.trim().parse().ok()).unwrap_or(pl1_uw);
+        .ok()
+        .and_then(|s| s.trim().parse().ok())
+        .unwrap_or_else(|| {
+            eprintln!("[aucc] warning: constraint_1_power_limit_uw unavailable, using PL1 as fallback");
+            pl1_uw
+        });
     Some(PowerLimits {
         pl1_w: pl1_uw as f32 / 1_000_000.0,
         pl2_w: pl2_uw as f32 / 1_000_000.0,
@@ -165,4 +170,99 @@ pub fn detect_profile() -> Option<PowerProfile> {
         let gov_bonus: u64 = if p.governor() == governor { 0 } else { 100 };
         (pl1 as i64 - target_w as i64).unsigned_abs() + gov_bonus
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ── PowerProfile::limits_uw() ──────────────────────────────────
+
+    #[test]
+    fn silent_limits() {
+        let (pl1, pl2) = PowerProfile::Silent.limits_uw();
+        assert_eq!(pl1, 35_000_000);
+        assert_eq!(pl2, 55_000_000);
+    }
+
+    #[test]
+    fn balanced_limits() {
+        let (pl1, pl2) = PowerProfile::Balanced.limits_uw();
+        assert_eq!(pl1, 55_000_000);
+        assert_eq!(pl2, 100_000_000);
+    }
+
+    #[test]
+    fn turbo_limits() {
+        let (pl1, pl2) = PowerProfile::Turbo.limits_uw();
+        assert_eq!(pl1, 95_000_000);
+        assert_eq!(pl2, 157_000_000);
+    }
+
+    // ── PowerProfile::governor() ───────────────────────────────────
+
+    #[test]
+    fn governors() {
+        assert_eq!(PowerProfile::Silent.governor(), "powersave");
+        assert_eq!(PowerProfile::Balanced.governor(), "powersave");
+        assert_eq!(PowerProfile::Turbo.governor(), "performance");
+    }
+
+    // ── PowerProfile::epp() ────────────────────────────────────────
+
+    #[test]
+    fn epp_values() {
+        assert_eq!(PowerProfile::Silent.epp(), "power");
+        assert_eq!(PowerProfile::Balanced.epp(), "balance_performance");
+        assert_eq!(PowerProfile::Turbo.epp(), "performance");
+    }
+
+    // ── PowerProfile::name() ───────────────────────────────────────
+
+    #[test]
+    fn profile_names() {
+        assert_eq!(PowerProfile::Silent.name(), "Silencioso");
+        assert_eq!(PowerProfile::Balanced.name(), "Equilibrado");
+        assert_eq!(PowerProfile::Turbo.name(), "Turbo");
+    }
+
+    // ── PowerProfile::from_str() ───────────────────────────────────
+
+    #[test]
+    fn from_str_english() {
+        assert_eq!(PowerProfile::from_str("silent"), Some(PowerProfile::Silent));
+        assert_eq!(PowerProfile::from_str("balanced"), Some(PowerProfile::Balanced));
+        assert_eq!(PowerProfile::from_str("turbo"), Some(PowerProfile::Turbo));
+    }
+
+    #[test]
+    fn from_str_portuguese() {
+        assert_eq!(PowerProfile::from_str("silencioso"), Some(PowerProfile::Silent));
+        assert_eq!(PowerProfile::from_str("equilibrado"), Some(PowerProfile::Balanced));
+    }
+
+    #[test]
+    fn from_str_case_insensitive() {
+        assert_eq!(PowerProfile::from_str("TURBO"), Some(PowerProfile::Turbo));
+        assert_eq!(PowerProfile::from_str("Silent"), Some(PowerProfile::Silent));
+        assert_eq!(PowerProfile::from_str("BaLaNcEd"), Some(PowerProfile::Balanced));
+    }
+
+    #[test]
+    fn from_str_invalid() {
+        assert_eq!(PowerProfile::from_str("unknown"), None);
+        assert_eq!(PowerProfile::from_str(""), None);
+        assert_eq!(PowerProfile::from_str("eco"), None);
+    }
+
+    // ── PowerProfile::all() ────────────────────────────────────────
+
+    #[test]
+    fn all_profiles() {
+        let all = PowerProfile::all();
+        assert_eq!(all.len(), 3);
+        assert_eq!(all[0], PowerProfile::Silent);
+        assert_eq!(all[1], PowerProfile::Balanced);
+        assert_eq!(all[2], PowerProfile::Turbo);
+    }
 }

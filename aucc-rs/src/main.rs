@@ -3,8 +3,28 @@ use aucc_rs::keyboard::{KeyboardDevice, colors::get_color, effects::{Effect, Wav
 use aucc_rs::lightbar;
 use aucc_rs::power::{self, PowerProfile};
 use aucc_rs::setup;
-use clap::{ArgGroup, Parser};
+use clap::{ArgGroup, Parser, ValueEnum};
 use colored::Colorize;
+
+/// Wave direction for the wave effect.
+#[derive(Debug, Clone, Copy, PartialEq, ValueEnum)]
+enum DirectionArg {
+    Right,
+    Left,
+    Up,
+    Down,
+}
+
+impl DirectionArg {
+    fn to_wave_dir(self) -> WaveDirection {
+        match self {
+            DirectionArg::Right => WaveDirection::Right,
+            DirectionArg::Left => WaveDirection::Left,
+            DirectionArg::Up => WaveDirection::Up,
+            DirectionArg::Down => WaveDirection::Down,
+        }
+    }
+}
 
 #[derive(Parser, Debug)]
 #[command(
@@ -126,7 +146,7 @@ struct Cli {
 
     /// Direção da onda (para --style wave): right, left, up, down
     #[arg(long, default_value = "right", value_name = "DIREÇÃO")]
-    direction: String,
+    direction: DirectionArg,
 
     /// Salvar configuração no EEPROM do teclado (persiste após reboot) — apenas para teclado
     #[arg(long)]
@@ -271,7 +291,7 @@ fn run_lightbar(cli: &Cli) -> Result<(), Box<dyn std::error::Error>> {
         let (r, g, b) = aucc_rs::keyboard::colors::get_color(color_name)
             .ok_or_else(|| format!("Cor desconhecida: '{color_name}'"))?;
         lightbar::apply_color(&path, r, g, b, cli.lb_brightness)?;
-        config::save(&LightbarConfig { enabled: true, r, g, b, brightness: cli.lb_brightness })?;
+        config::save(&LightbarConfig { enabled: true, r, g, b, brightness: cli.lb_brightness, save_eeprom: false })?;
         println!("{}", format!("Lightbar: cor '{color_name}' brilho {}% aplicada.", cli.lb_brightness).green());
         return Ok(());
     }
@@ -315,10 +335,10 @@ fn run(dev: &KeyboardDevice, cli: &Cli) -> Result<(), Box<dyn std::error::Error>
         return Ok(());
     }
     if let Some(style) = &cli.style {
-        let (name, letter) = split_style(style);
+        let (name, letter, reactive) = split_style(style);
         let effect = Effect::from_str(name).ok_or_else(|| format!("Efeito desconhecido: '{name}'"))?;
-        let dir = WaveDirection::from_str(&cli.direction).unwrap_or_default();
-        dev.apply_effect(&effect_payload(effect, cli.speed, cli.brightness, letter, dir, cli.save))?;
+        let dir = cli.direction.to_wave_dir();
+        dev.apply_effect(&effect_payload(effect, cli.speed, cli.brightness, letter, dir, reactive, cli.save))?;
         println!("{}", format!("Efeito '{style}' aplicado.").green());
         return Ok(());
     }
@@ -373,14 +393,16 @@ fn print_telemetry() {
     }
 }
 
-fn split_style(style: &str) -> (&str, Option<char>) {
+fn split_style(style: &str) -> (&str, Option<char>, bool) {
+    let reactive = Effect::is_reactive_alias(style);
+
     if let Some(last) = style.chars().last() {
         if "roygbtp".contains(last) && style.len() > 1 {
             let prefix = &style[..style.len() - last.len_utf8()];
             if Effect::from_str(prefix).is_some() {
-                return (prefix, Some(last));
+                return (prefix, Some(last), reactive);
             }
         }
     }
-    (style, None)
+    (style, None, reactive)
 }
