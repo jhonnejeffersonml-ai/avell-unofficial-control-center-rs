@@ -1,0 +1,43 @@
+{
+  "version": "1.0",
+  "timestamp": "2026-04-15T20:43:40.493Z",
+  "phase": "01",
+  "phase_name": "audio-reactive-led-effects",
+  "phase_dir": ".planning/phases/01-audio-reactive-led-effects",
+  "plan": 0,
+  "task": 0,
+  "total_tasks": 3,
+  "status": "paused",
+  "completed_tasks": [],
+  "remaining_tasks": [
+    {"id": 1, "name": "Wave 1 — Audio types, FFT, effects, 24 unit tests", "status": "not_started", "plan": "01-PLAN-01.md"},
+    {"id": 2, "name": "Wave 2 — cpal capture + spawn_audio_engine + LedDriveHandle", "status": "not_started", "plan": "01-PLAN-02.md"},
+    {"id": 3, "name": "Wave 3 — TUI integration, AudioSync screen, snapshot/restore", "status": "not_started", "plan": "01-PLAN-03.md"}
+  ],
+  "blockers": [
+    {
+      "description": "libasound2-dev + pkg-config not installed — cargo build will fail without them",
+      "type": "human_action",
+      "workaround": "sudo apt install libasound2-dev pkg-config"
+    }
+  ],
+  "human_actions_pending": [
+    {
+      "action": "sudo apt install libasound2-dev pkg-config",
+      "context": "cpal requires ALSA dev headers to compile on Linux",
+      "blocking": true
+    }
+  ],
+  "decisions": [
+    {"decision": "cpal 0.17.3 via ALSA host", "rationale": "Latest stable, works through PipeWire ALSA compat layer", "phase": "01"},
+    {"decision": "LED drive sends UsbCmd directly — bypasses TUI loop", "rationale": "TUI polls at 50ms which would inflate LED latency above 33ms budget", "phase": "01"},
+    {"decision": "30fps LED drive rate (33ms budget)", "rationale": "ITE 8291 keyboard takes ~15ms per write; 30fps saturates without overload", "phase": "01"},
+    {"decision": "save: false mandatory on all audio LED writes", "rationale": "30fps EEPROM writes would destroy hardware", "phase": "01"},
+    {"decision": "setup_audio_env_for_root() before any cpal call", "rationale": "pkexec resets XDG_RUNTIME_DIR; PipeWire socket unreachable without fix", "phase": "01"},
+    {"decision": "Effects: Pulse, ColorShift, Wave, Breathe, Random (auto-cycles at 8s)", "rationale": "User preference from explore session", "phase": "01"},
+    {"decision": "Audio source: configurable from TUI (Screen::AudioDevice)", "rationale": "User preference from explore session", "phase": "01"}
+  ],
+  "uncommitted_files": [],
+  "next_action": "Run: sudo apt install libasound2-dev pkg-config — then execute Plan 01 (Wave 1)",
+  "context_notes": "All 3 plans are fully written and checker-verified (PASS, 10/10 invariants). No code has been touched yet. Execution starts from Plan 01 Wave 1."
+}
