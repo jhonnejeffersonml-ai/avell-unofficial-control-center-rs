@@ -1,5 +1,6 @@
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use std::sync::{Arc, Mutex};
+use std::collections::HashMap;
 use crate::audio::{BandAmplitudes, fft};
 
 /// Temporarily redirect stderr → /dev/null for the duration of `f`.
@@ -18,6 +19,64 @@ fn with_stderr_suppressed<T, F: FnOnce() -> T>(f: F) -> T {
             libc::close(saved);
         }
         result
+    }
+}
+
+/// Parse /proc/asound/cards → map of card_id → friendly description.
+/// e.g. "PCH" → "HDA Intel PCH", "NVidia" → "HDA NVidia"
+fn alsa_card_names() -> HashMap<String, String> {
+    let mut map = HashMap::new();
+    let Ok(content) = std::fs::read_to_string("/proc/asound/cards") else {
+        return map;
+    };
+    // Each card block: " 0 [PCH            ]: HDA-Intel - HDA Intel PCH"
+    for line in content.lines() {
+        if !line.starts_with(' ') && !line.starts_with('\t') {
+            continue;
+        }
+        let line = line.trim();
+        if let (Some(bracket_start), Some(bracket_end)) = (line.find('['), line.find(']')) {
+            let card_id = line[bracket_start + 1..bracket_end].trim().to_string();
+            if let Some(dash_pos) = line.find(" - ") {
+                let friendly = line[dash_pos + 3..].trim().to_string();
+                if !card_id.is_empty() && !friendly.is_empty() {
+                    map.insert(card_id, friendly);
+                }
+            }
+        }
+    }
+    map
+}
+
+/// Returns true for ALSA device names worth showing to the user.
+/// Filters out technical duplicates: plughw, surround*, front, dmix, dsnoop, null.
+fn is_useful_device(name: &str) -> bool {
+    if name == "null" || name == "default" {
+        return false;
+    }
+    let prefixes_to_skip = ["plughw:", "surround", "front:", "dmix:", "dsnoop:"];
+    !prefixes_to_skip.iter().any(|p| name.starts_with(p))
+}
+
+/// Build a human-readable label for an ALSA device name.
+/// e.g. "sysdefault:CARD=PCH" + cards{"PCH":"HDA Intel PCH"} → "HDA Intel PCH — padrão"
+fn friendly_label(name: &str, card_names: &HashMap<String, String>) -> String {
+    // Extract CARD=XXX from name
+    let card_id = name.split("CARD=").nth(1)
+        .map(|s| s.split(',').next().unwrap_or(s).trim())
+        .unwrap_or("");
+    let card_label = if card_id.is_empty() {
+        name.to_string()
+    } else {
+        card_names.get(card_id).cloned().unwrap_or_else(|| card_id.to_string())
+    };
+
+    if name.starts_with("sysdefault:") {
+        format!("{card_label} — padrão")
+    } else if name.starts_with("hw:") {
+        format!("{card_label} — hw direto")
+    } else {
+        card_label
     }
 }
 
@@ -48,9 +107,11 @@ pub fn setup_audio_env_for_root() {
 }
 
 /// Enumerate all input-capable audio devices.
-/// Returns Vec of (device_name, display_description).
+/// Returns Vec of (device_name, display_label).
+/// device_name is the raw ALSA name used internally; display_label is human-readable.
 /// Call `setup_audio_env_for_root()` before this.
 pub fn list_input_devices() -> Vec<(String, String)> {
+    let card_names = alsa_card_names();
     let host = with_stderr_suppressed(|| cpal::default_host());
     let devices = match with_stderr_suppressed(|| host.devices()) {
         Ok(d) => d,
@@ -58,7 +119,6 @@ pub fn list_input_devices() -> Vec<(String, String)> {
     };
     devices
         .filter_map(|dev| {
-            // Only include devices that support input
             let has_input = dev.supported_input_configs()
                 .map(|mut c| c.next().is_some())
                 .unwrap_or(false);
@@ -66,7 +126,11 @@ pub fn list_input_devices() -> Vec<(String, String)> {
                 return None;
             }
             let name = dev.name().ok()?;
-            Some((name.clone(), name))
+            if !is_useful_device(&name) {
+                return None;
+            }
+            let label = friendly_label(&name, &card_names);
+            Some((name, label))
         })
         .collect()
 }
