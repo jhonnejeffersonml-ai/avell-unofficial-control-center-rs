@@ -2,6 +2,25 @@ use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use std::sync::{Arc, Mutex};
 use crate::audio::{BandAmplitudes, fft};
 
+/// Temporarily redirect stderr → /dev/null for the duration of `f`.
+/// Suppresses ALSA/JACK probe spam that corrupts TUI rendering.
+fn with_stderr_suppressed<T, F: FnOnce() -> T>(f: F) -> T {
+    unsafe {
+        let devnull = libc::open(b"/dev/null\0".as_ptr() as *const libc::c_char, libc::O_WRONLY);
+        let saved = if devnull >= 0 { libc::dup(2) } else { -1 };
+        if devnull >= 0 {
+            libc::dup2(devnull, 2);
+            libc::close(devnull);
+        }
+        let result = f();
+        if saved >= 0 {
+            libc::dup2(saved, 2);
+            libc::close(saved);
+        }
+        result
+    }
+}
+
 /// Set XDG_RUNTIME_DIR so cpal's ALSA backend can reach PipeWire.
 /// Only modifies env when running as root (euid == 0) and PKEXEC_UID is set.
 ///
@@ -32,8 +51,8 @@ pub fn setup_audio_env_for_root() {
 /// Returns Vec of (device_name, display_description).
 /// Call `setup_audio_env_for_root()` before this.
 pub fn list_input_devices() -> Vec<(String, String)> {
-    let host = cpal::default_host();
-    let devices = match host.devices() {
+    let host = with_stderr_suppressed(|| cpal::default_host());
+    let devices = match with_stderr_suppressed(|| host.devices()) {
         Ok(d) => d,
         Err(_) => return Vec::new(),
     };
@@ -63,18 +82,18 @@ pub fn build_input_stream(
     device_name: Option<&str>,
     bands: Arc<Mutex<BandAmplitudes>>,
 ) -> Result<cpal::Stream, String> {
-    let host = cpal::default_host();
+    let host = with_stderr_suppressed(|| cpal::default_host());
 
-    let device = match device_name {
+    let device = with_stderr_suppressed(|| match device_name {
         Some(name) => {
             host.devices()
                 .map_err(|e| format!("Erro ao listar dispositivos: {e}"))?
                 .find(|d| d.name().map(|n| n == name).unwrap_or(false))
-                .ok_or_else(|| format!("Dispositivo não encontrado: {name}"))?
+                .ok_or_else(|| format!("Dispositivo não encontrado: {name}"))
         }
         None => host.default_input_device()
-            .ok_or_else(|| "Nenhum dispositivo de entrada padrão".to_string())?,
-    };
+            .ok_or_else(|| "Nenhum dispositivo de entrada padrão".to_string()),
+    })?;
 
     let config = device.default_input_config()
         .map_err(|e| format!("Erro na configuração de áudio: {e}"))?;
