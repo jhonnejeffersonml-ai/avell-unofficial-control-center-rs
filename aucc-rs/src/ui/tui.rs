@@ -3,6 +3,8 @@ use std::path::PathBuf;
 use std::sync::mpsc;
 use std::thread;
 use std::time::Duration;
+use crate::audio::{self, AudioCmd};
+use crate::audio::effects::AudioEffect;
 
 use crossterm::{
     event::{self, Event, KeyCode, KeyEventKind},
@@ -54,9 +56,19 @@ pub enum Screen {
     Speed,
     LbColor,
     LbBrightness,
+    AudioSync,
+    AudioDevice,
 }
 
 // ── App state ─────────────────────────────────────────────────────────────────
+
+/// Captured LED state before audio sync — restored on disable.
+struct LedSnapshot {
+    r: u8,
+    g: u8,
+    b: u8,
+    brightness: u8,
+}
 
 pub struct AppState {
     pub screen: Screen,
@@ -85,17 +97,28 @@ pub struct AppState {
     // Network counters
     prev_net_rx: u64,
     prev_net_tx: u64,
+    // Audio sync state
+    audio_tx: Option<mpsc::Sender<AudioCmd>>,
+    audio_enabled: bool,
+    audio_effect: AudioEffect,
+    audio_devices: Vec<(String, String)>,
+    audio_device_idx: Option<usize>,
+    audio_snapshot: Option<LedSnapshot>,
 }
 
 // ── USB command channel ───────────────────────────────────────────────────────
 
-enum UsbCmd {
+pub enum UsbCmd {
     MonoColor { r: u8, g: u8, b: u8, brightness: u8, save: bool },
     AltColor { ra: u8, ga: u8, ba: u8, rb: u8, gb: u8, bb: u8, brightness: u8, horizontal: bool, save: bool },
     Effect([u8; 8]),
     Disable,
     LbColor { path: PathBuf, r: u8, g: u8, b: u8, brightness: u8 },
     LbDisable { path: PathBuf },
+    /// Audio-reactive color + brightness (save: false always — never wear EEPROM at 30fps).
+    AudioColor { r: u8, g: u8, b: u8, brightness: u8 },
+    /// Audio-reactive brightness only (fastest path — 1 USB transfer).
+    AudioBrightness(u8),
 }
 
 const COLOR_NAMES: &[&str] = &[
@@ -173,6 +196,12 @@ impl AppState {
             telemetry_history: telemetry::TelemetryHistory::new(),
             prev_net_rx: 0,
             prev_net_tx: 0,
+            audio_tx: None,
+            audio_enabled: false,
+            audio_effect: AudioEffect::Pulse,
+            audio_devices: Vec::new(),
+            audio_device_idx: None,
+            audio_snapshot: None,
         }
     }
 
@@ -200,6 +229,9 @@ impl AppState {
             Screen::Brightness   => 4,
             Screen::Speed        => 10,
             Screen::LbBrightness => LB_BRIGHTNESS.len(),
+            // 5 effects + sep + device btn + sep + toggle = 9
+            Screen::AudioSync    => 9,
+            Screen::AudioDevice  => self.audio_devices.len().max(1),
         }
     }
 
@@ -208,11 +240,20 @@ impl AppState {
         if n == 0 { return; }
         let cur = self.selected() as i32;
         let mut next = ((cur + delta).rem_euclid(n as i32)) as usize;
-        // Skip separator lines in main menu
+        // Skip separator lines in main menu and AudioSync screen
         if self.screen == Screen::Main {
             let items = main_items_dynamic(self.save_eeprom);
             for _ in 0..n {
                 if items[next].starts_with('─') {
+                    next = ((next as i32 + delta).rem_euclid(n as i32)) as usize;
+                } else {
+                    break;
+                }
+            }
+        } else if self.screen == Screen::AudioSync {
+            // Separators are at indices 5 and 7
+            for _ in 0..n {
+                if next == 5 || next == 7 {
                     next = ((next as i32 + delta).rem_euclid(n as i32)) as usize;
                 } else {
                     break;
@@ -385,6 +426,13 @@ impl AppState {
                     "Teclado — Alternado Horizontal" => { self._mode = Some("h_alt"); self.go_to(Screen::HAltA, 0); self.live_preview(); }
                     "Teclado — Alternado Vertical"   => { self._mode = Some("v_alt"); self.go_to(Screen::VAltA, 0); self.live_preview(); }
                     "Teclado — Efeito"               => { self._mode = Some("effect"); self.go_to(Screen::Effect, 0); }
+                    "🎵 Audio Sync" => {
+                        if self.audio_devices.is_empty() {
+                            audio::capture::setup_audio_env_for_root();
+                            self.audio_devices = audio::capture::list_input_devices();
+                        }
+                        self.go_to(Screen::AudioSync, 0);
+                    }
                     _ => {}
                 }
             }
@@ -492,6 +540,50 @@ impl AppState {
                 }
                 self.go_to(Screen::Main, 0);
             }
+            Screen::AudioSync => {
+                match idx {
+                    0..=4 => {
+                        const AUDIO_EFFECTS: [AudioEffect; 5] = [
+                            AudioEffect::Pulse,
+                            AudioEffect::ColorShift,
+                            AudioEffect::Wave,
+                            AudioEffect::Breathe,
+                            AudioEffect::Random,
+                        ];
+                        self.audio_effect = AUDIO_EFFECTS[idx];
+                        self.status = format!("Efeito: {}", self.audio_effect.label());
+                        if self.audio_enabled {
+                            if let Some(ref tx) = self.audio_tx {
+                                let _ = tx.send(AudioCmd::SetEffect(self.audio_effect));
+                            }
+                        }
+                    }
+                    5 | 7 => {} // separators — no action
+                    6 => {
+                        self.audio_devices = audio::capture::list_input_devices();
+                        self.go_to(Screen::AudioDevice, 0);
+                    }
+                    8 => {
+                        if self.audio_enabled {
+                            self.disable_audio_sync();
+                        } else {
+                            self.enable_audio_sync();
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            Screen::AudioDevice => {
+                if !self.audio_devices.is_empty() {
+                    let (_, desc) = &self.audio_devices[idx];
+                    self.status = format!("Fonte: {desc}");
+                    self.audio_device_idx = Some(idx);
+                } else {
+                    self.audio_device_idx = None;
+                    self.status = "Usando dispositivo padrão.".into();
+                }
+                self.go_to(Screen::AudioSync, 0);
+            }
         }
         false
     }
@@ -509,6 +601,8 @@ impl AppState {
             Screen::Brightness => (Some(Screen::Main), 0),
             Screen::Speed    => (Some(Screen::Brightness), self.brightness as usize - 1),
             Screen::LbBrightness => (Some(Screen::LbColor), 0),
+            Screen::AudioSync   => (Some(Screen::Main), 0),
+            Screen::AudioDevice => (Some(Screen::AudioSync), 0),
             Screen::Main     => return true,
         };
         if let Some(s) = dest {
@@ -520,6 +614,51 @@ impl AppState {
     fn go_to(&mut self, screen: Screen, idx: usize) {
         self.screen = screen;
         self.set_selected(idx);
+    }
+
+    fn enable_audio_sync(&mut self) {
+        let (r, g, b) = color_at(self.color_a);
+        self.audio_snapshot = Some(LedSnapshot { r, g, b, brightness: self.brightness });
+
+        let (audio_tx, audio_rx) = mpsc::channel::<AudioCmd>();
+        let lb_path = self.lb_path.clone();
+        audio::spawn_audio_engine(audio_rx, self.usb_tx.clone(), lb_path);
+
+        let device_name = self.audio_device_idx
+            .and_then(|i| self.audio_devices.get(i))
+            .map(|(name, _)| name.clone());
+
+        let _ = audio_tx.send(AudioCmd::Enable {
+            device_name,
+            effect: self.audio_effect,
+        });
+
+        self.audio_tx = Some(audio_tx);
+        self.audio_enabled = true;
+        self.status = "🎵 Audio sync ativado!".into();
+    }
+
+    fn disable_audio_sync(&mut self) {
+        if let Some(ref tx) = self.audio_tx {
+            let _ = tx.send(AudioCmd::Disable);
+        }
+        self.audio_tx = None;
+        self.audio_enabled = false;
+
+        if let Some(snap) = self.audio_snapshot.take() {
+            let _ = self.usb_tx.send(UsbCmd::MonoColor {
+                r: snap.r, g: snap.g, b: snap.b,
+                brightness: snap.brightness,
+                save: false,
+            });
+            if let Some(path) = self.lb_path.clone() {
+                let _ = self.usb_tx.send(UsbCmd::LbColor {
+                    path, r: snap.r, g: snap.g, b: snap.b,
+                    brightness: 0x32,
+                });
+            }
+        }
+        self.status = "Audio sync desativado.".into();
     }
 }
 
@@ -541,6 +680,8 @@ fn main_items_dynamic(save: bool) -> Vec<&'static str> {
         "Teclado — Alternado Vertical",
         "Teclado — Efeito",
         "Teclado — Desligar",
+        "──────────────────",
+        "🎵 Audio Sync",
         "──────────────────",
         "Lightbar — Cor",
         "Lightbar — Igual ao teclado",
@@ -696,6 +837,8 @@ fn screen_title(state: &AppState) -> String {
         Screen::Speed        => "⚡ Teclado — Velocidade".into(),
         Screen::LbColor      => format!("🔆 Lightbar — Cor{lb}"),
         Screen::LbBrightness => "🔆 Lightbar — Intensidade".into(),
+        Screen::AudioSync    => "🎵 Audio Sync — LEDs reagem ao áudio".into(),
+        Screen::AudioDevice  => "🎵 Selecionar fonte de áudio".into(),
     }
 }
 
@@ -754,6 +897,37 @@ fn build_list_items(state: &AppState) -> Vec<ListItem<'static>> {
         Screen::LbBrightness => LB_BRIGHTNESS.iter()
             .map(|(_, label)| ListItem::new(*label))
             .collect(),
+        Screen::AudioSync => {
+            const EFFECTS: [AudioEffect; 5] = [
+                AudioEffect::Pulse,
+                AudioEffect::ColorShift,
+                AudioEffect::Wave,
+                AudioEffect::Breathe,
+                AudioEffect::Random,
+            ];
+            let mut items: Vec<ListItem> = EFFECTS.iter().map(|e| {
+                let marker = if *e == state.audio_effect { " ✔" } else { "" };
+                ListItem::new(format!("{}{marker}", e.label()))
+            }).collect();
+            items.push(ListItem::new("──────────────────"));
+            items.push(ListItem::new("🔊 Selecionar fonte de áudio"));
+            items.push(ListItem::new("──────────────────"));
+            if state.audio_enabled {
+                items.push(ListItem::new("⏹ Desativar Audio Sync"));
+            } else {
+                items.push(ListItem::new("▶ Ativar Audio Sync"));
+            }
+            items
+        }
+        Screen::AudioDevice => {
+            if state.audio_devices.is_empty() {
+                vec![ListItem::new("Nenhum dispositivo encontrado")]
+            } else {
+                state.audio_devices.iter()
+                    .map(|(_name, desc)| ListItem::new(desc.clone()))
+                    .collect()
+            }
+        }
     }
 }
 
@@ -1399,6 +1573,13 @@ fn spawn_usb_worker(rx: mpsc::Receiver<UsbCmd>, error_tx: mpsc::Sender<String>) 
                     UsbCmd::LbDisable { path } => {
                         lightbar::disable(&path).map_err(|_| rusb::Error::Io)
                     }
+                    UsbCmd::AudioColor { r, g, b, brightness } => {
+                        // save: false — never persist audio-reactive state to EEPROM
+                        d.apply_mono_color(r, g, b, brightness, false)
+                    }
+                    UsbCmd::AudioBrightness(level) => {
+                        d.set_brightness(level)
+                    }
                 };
                 if let Err(e) = result {
                     let _ = error_tx.send(format!("USB error: {e}"));
@@ -1484,6 +1665,11 @@ pub fn run() -> io::Result<()> {
                 }
             }
         }
+    }
+
+    // Stop audio sync before restoring terminal
+    if state.audio_enabled {
+        state.disable_audio_sync();
     }
 
     // Restore terminal
