@@ -1,13 +1,16 @@
+use crate::audio::{fft, BandAmplitudes};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
-use std::sync::{Arc, Mutex};
 use std::collections::HashMap;
-use crate::audio::{BandAmplitudes, fft};
+use std::sync::{Arc, Mutex};
 
 /// Temporarily redirect stderr → /dev/null for the duration of `f`.
 /// Suppresses ALSA/JACK probe spam that corrupts TUI rendering.
-fn with_stderr_suppressed<T, F: FnOnce() -> T>(f: F) -> T {
+pub fn with_stderr_suppressed<T, F: FnOnce() -> T>(f: F) -> T {
     unsafe {
-        let devnull = libc::open(b"/dev/null\0".as_ptr() as *const libc::c_char, libc::O_WRONLY);
+        let devnull = libc::open(
+            b"/dev/null\0".as_ptr() as *const libc::c_char,
+            libc::O_WRONLY,
+        );
         let saved = if devnull >= 0 { libc::dup(2) } else { -1 };
         if devnull >= 0 {
             libc::dup2(devnull, 2);
@@ -62,13 +65,18 @@ fn is_useful_device(name: &str) -> bool {
 /// e.g. "sysdefault:CARD=PCH" + cards{"PCH":"HDA Intel PCH"} → "HDA Intel PCH — padrão"
 fn friendly_label(name: &str, card_names: &HashMap<String, String>) -> String {
     // Extract CARD=XXX from name
-    let card_id = name.split("CARD=").nth(1)
+    let card_id = name
+        .split("CARD=")
+        .nth(1)
         .map(|s| s.split(',').next().unwrap_or(s).trim())
         .unwrap_or("");
     let card_label = if card_id.is_empty() {
         name.to_string()
     } else {
-        card_names.get(card_id).cloned().unwrap_or_else(|| card_id.to_string())
+        card_names
+            .get(card_id)
+            .cloned()
+            .unwrap_or_else(|| card_id.to_string())
     };
 
     if name.starts_with("sysdefault:") {
@@ -87,21 +95,17 @@ fn friendly_label(name: &str, card_names: &HashMap<String, String>) -> String {
 /// Calls `set_var` which is unsafe in multi-threaded context.
 /// MUST be called before any threads are spawned.
 pub fn setup_audio_env_for_root() {
+    std::env::set_var("ALSA_LOG_LEVEL", "0");
     if unsafe { libc::geteuid() } == 0 {
         if let Ok(uid_str) = std::env::var("PKEXEC_UID") {
-            // Validate: PKEXEC_UID must be a valid non-negative integer
             if let Ok(uid) = uid_str.parse::<u32>() {
                 let xdg = format!("/run/user/{uid}");
-                // Safe: called before any audio threads exist
                 unsafe {
                     std::env::set_var("XDG_RUNTIME_DIR", &xdg);
                     std::env::set_var("PIPEWIRE_RUNTIME_DIR", &xdg);
-                    std::env::set_var("PULSE_SERVER",
-                        format!("unix:{xdg}/pulse/native"));
+                    std::env::set_var("PULSE_SERVER", format!("unix:{xdg}/pulse/native"));
                 }
             }
-            // If PKEXEC_UID is not a valid u32, skip silently (don't construct paths
-            // from untrusted input — T-01-04 mitigation).
         }
     }
 }
@@ -119,7 +123,8 @@ pub fn list_input_devices() -> Vec<(String, String)> {
     };
     devices
         .filter_map(|dev| {
-            let has_input = dev.supported_input_configs()
+            let has_input = dev
+                .supported_input_configs()
                 .map(|mut c| c.next().is_some())
                 .unwrap_or(false);
             if !has_input {
@@ -149,43 +154,51 @@ pub fn build_input_stream(
     let host = with_stderr_suppressed(|| cpal::default_host());
 
     let device = with_stderr_suppressed(|| match device_name {
-        Some(name) => {
-            host.devices()
-                .map_err(|e| format!("Erro ao listar dispositivos: {e}"))?
-                .find(|d| d.name().map(|n| n == name).unwrap_or(false))
-                .ok_or_else(|| format!("Dispositivo não encontrado: {name}"))
-        }
-        None => host.default_input_device()
+        Some(name) => host
+            .devices()
+            .map_err(|e| format!("Erro ao listar dispositivos: {e}"))?
+            .find(|d| d.name().map(|n| n == name).unwrap_or(false))
+            .ok_or_else(|| format!("Dispositivo não encontrado: {name}")),
+        None => host
+            .default_input_device()
             .ok_or_else(|| "Nenhum dispositivo de entrada padrão".to_string()),
     })?;
 
-    let config = device.default_input_config()
-        .map_err(|e| format!("Erro na configuração de áudio: {e}"))?;
+    let config = with_stderr_suppressed(|| {
+        device
+            .default_input_config()
+            .map_err(|e| format!("Erro na configuração de áudio: {e}"))
+    })?;
     let sample_rate = config.sample_rate();
     let channels = config.channels() as usize;
 
-    let stream = device.build_input_stream(
-        &config.into(),
-        move |data: &[f32], _: &cpal::InputCallbackInfo| {
-            // Mix to mono
-            let mono: Vec<f32> = data.chunks(channels)
-                .map(|ch| ch.iter().sum::<f32>() / channels as f32)
-                .collect();
-            // FFT → band extraction
-            if let Some(new_bands) = fft::process_fft(&mono, sample_rate) {
-                if let Ok(mut b) = bands.lock() {
-                    fft::smooth_bands(&mut b, &new_bands);
+    let stream = device
+        .build_input_stream(
+            &config.into(),
+            move |data: &[f32], _: &cpal::InputCallbackInfo| {
+                // Mix to mono
+                let mono: Vec<f32> = data
+                    .chunks(channels)
+                    .map(|ch| ch.iter().sum::<f32>() / channels as f32)
+                    .collect();
+                // FFT → band extraction
+                if let Some(new_bands) = fft::process_fft(&mono, sample_rate) {
+                    if let Ok(mut b) = bands.lock() {
+                        fft::smooth_bands(&mut b, &new_bands);
+                    }
                 }
-            }
-        },
-        |err| {
-            // Error callback — must NOT panic (T-01-05: cpal runs this on RT thread)
-            eprintln!("cpal stream error: {err}");
-        },
-        None, // no timeout
-    ).map_err(|e| format!("Erro ao criar stream de áudio: {e}"))?;
+            },
+            |err| {
+                // Error callback — must NOT panic (T-01-05: cpal runs this on RT thread)
+                eprintln!("cpal stream error: {err}");
+            },
+            None, // no timeout
+        )
+        .map_err(|e| format!("Erro ao criar stream de áudio: {e}"))?;
 
-    stream.play().map_err(|e| format!("Erro ao iniciar stream: {e}"))?;
+    stream
+        .play()
+        .map_err(|e| format!("Erro ao iniciar stream: {e}"))?;
     Ok(stream)
 }
 

@@ -1,6 +1,6 @@
+use crate::audio::{BandAmplitudes, LedOutput};
 use std::fmt;
 use std::time::Instant;
-use crate::audio::{BandAmplitudes, LedOutput};
 
 /// Audio-reactive effect types.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -31,11 +31,11 @@ impl AudioEffect {
     /// Parse from user-facing string.
     pub fn from_str(s: &str) -> Option<Self> {
         match s {
-            "pulse"       => Some(AudioEffect::Pulse),
+            "pulse" => Some(AudioEffect::Pulse),
             "color-shift" => Some(AudioEffect::ColorShift),
-            "wave"        => Some(AudioEffect::Wave),
-            "breathe"     => Some(AudioEffect::Breathe),
-            "random"      => Some(AudioEffect::Random),
+            "wave" => Some(AudioEffect::Wave),
+            "breathe" => Some(AudioEffect::Breathe),
+            "random" => Some(AudioEffect::Random),
             _ => None,
         }
     }
@@ -43,11 +43,11 @@ impl AudioEffect {
     /// User-facing label (Portuguese).
     pub fn label(self) -> &'static str {
         match self {
-            AudioEffect::Pulse      => "Pulse — brilho pulsa com batida",
+            AudioEffect::Pulse => "Pulse — brilho pulsa com batida",
             AudioEffect::ColorShift => "Color-shift — cor muda com frequência",
-            AudioEffect::Wave       => "Wave — onda de cor no ritmo",
-            AudioEffect::Breathe    => "Breathe — respiração suave",
-            AudioEffect::Random     => "Random — cicla entre efeitos",
+            AudioEffect::Wave => "Wave — onda de cor no ritmo",
+            AudioEffect::Breathe => "Breathe — respiração suave",
+            AudioEffect::Random => "Random — cicla entre efeitos",
         }
     }
 }
@@ -55,11 +55,11 @@ impl AudioEffect {
 impl fmt::Display for AudioEffect {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let s = match self {
-            AudioEffect::Pulse      => "pulse",
+            AudioEffect::Pulse => "pulse",
             AudioEffect::ColorShift => "color-shift",
-            AudioEffect::Wave       => "wave",
-            AudioEffect::Breathe    => "breathe",
-            AudioEffect::Random     => "random",
+            AudioEffect::Wave => "wave",
+            AudioEffect::Breathe => "breathe",
+            AudioEffect::Random => "random",
         };
         write!(f, "{s}")
     }
@@ -98,26 +98,23 @@ impl AudioEffectState {
     /// Render the current effect into an LED output command.
     pub fn render(&mut self, bands: &BandAmplitudes) -> LedOutput {
         match self.effect {
-            AudioEffect::Pulse      => render_pulse(bands),
+            AudioEffect::Pulse => render_pulse(bands),
             AudioEffect::ColorShift => render_color_shift(bands),
-            AudioEffect::Wave       => render_wave(bands, self.phase),
-            AudioEffect::Breathe    => render_breathe(bands, self.phase),
+            AudioEffect::Wave => render_wave(bands, self.phase),
+            AudioEffect::Breathe => render_breathe(bands, self.phase),
             AudioEffect::Random => {
                 // Check if it's time to switch effect
-                if self.random_deadline.elapsed()
-                    >= std::time::Duration::from_secs(8)
-                {
-                    self.random_idx =
-                        (self.random_idx + 1) % AudioEffect::CYCLE.len();
+                if self.random_deadline.elapsed() >= std::time::Duration::from_secs(8) {
+                    self.random_idx = (self.random_idx + 1) % AudioEffect::CYCLE.len();
                     self.random_deadline = Instant::now();
                 }
                 let current = AudioEffect::CYCLE[self.random_idx];
                 match current {
-                    AudioEffect::Pulse      => render_pulse(bands),
+                    AudioEffect::Pulse => render_pulse(bands),
                     AudioEffect::ColorShift => render_color_shift(bands),
-                    AudioEffect::Wave       => render_wave(bands, self.phase),
-                    AudioEffect::Breathe    => render_breathe(bands, self.phase),
-                    AudioEffect::Random     => unreachable!(),
+                    AudioEffect::Wave => render_wave(bands, self.phase),
+                    AudioEffect::Breathe => render_breathe(bands, self.phase),
+                    AudioEffect::Random => unreachable!(),
                 }
             }
         }
@@ -156,7 +153,12 @@ fn render_color_shift(bands: &BandAmplitudes) -> LedOutput {
     let value = overall.clamp(0.2, 1.0); // never fully dark
     let brightness = (overall * 4.0).ceil().clamp(1.0, 4.0) as u8;
     let (r, g, b) = hsv_to_rgb(hue, sat, value);
-    LedOutput::Color { r, g, b, brightness }
+    LedOutput::Color {
+        r,
+        g,
+        b,
+        brightness,
+    }
 }
 
 /// Wave: time-evolving hue wave modulated by audio amplitude.
@@ -168,7 +170,12 @@ fn render_wave(bands: &BandAmplitudes, phase: f32) -> LedOutput {
     let value = (0.3 + overall * 0.7).min(1.0);
     let brightness = (overall * 4.0).ceil().clamp(1.0, 4.0) as u8;
     let (r, g, b) = hsv_to_rgb(hue, 1.0, value);
-    LedOutput::Color { r, g, b, brightness }
+    LedOutput::Color {
+        r,
+        g,
+        b,
+        brightness,
+    }
 }
 
 /// Breathe: smooth sine envelope synchronized with audio.
@@ -182,7 +189,7 @@ fn render_breathe(bands: &BandAmplitudes, phase: f32) -> LedOutput {
 
     // Gentle hue based on dominant band
     let hue = if bands.bass >= bands.mid && bands.bass >= bands.treble {
-        15.0  // warm orange
+        15.0 // warm orange
     } else if bands.mid >= bands.treble {
         110.0 // green
     } else {
@@ -190,7 +197,12 @@ fn render_breathe(bands: &BandAmplitudes, phase: f32) -> LedOutput {
     };
 
     let (r, g, b) = hsv_to_rgb(hue, 0.8, value);
-    LedOutput::Color { r, g, b, brightness }
+    LedOutput::Color {
+        r,
+        g,
+        b,
+        brightness,
+    }
 }
 
 // ── HSV → RGB ─────────────────────────────────────────────────────────────────
@@ -270,25 +282,31 @@ mod tests {
 
     #[test]
     fn effect_from_str_valid() {
-        assert_eq!(AudioEffect::from_str("pulse"),       Some(AudioEffect::Pulse));
-        assert_eq!(AudioEffect::from_str("color-shift"), Some(AudioEffect::ColorShift));
-        assert_eq!(AudioEffect::from_str("wave"),        Some(AudioEffect::Wave));
-        assert_eq!(AudioEffect::from_str("breathe"),     Some(AudioEffect::Breathe));
-        assert_eq!(AudioEffect::from_str("random"),      Some(AudioEffect::Random));
+        assert_eq!(AudioEffect::from_str("pulse"), Some(AudioEffect::Pulse));
+        assert_eq!(
+            AudioEffect::from_str("color-shift"),
+            Some(AudioEffect::ColorShift)
+        );
+        assert_eq!(AudioEffect::from_str("wave"), Some(AudioEffect::Wave));
+        assert_eq!(AudioEffect::from_str("breathe"), Some(AudioEffect::Breathe));
+        assert_eq!(AudioEffect::from_str("random"), Some(AudioEffect::Random));
     }
 
     #[test]
     fn effect_from_str_invalid() {
         assert_eq!(AudioEffect::from_str("unknown"), None);
-        assert_eq!(AudioEffect::from_str(""),        None);
+        assert_eq!(AudioEffect::from_str(""), None);
     }
 
     #[test]
     fn effect_display_roundtrip() {
         for eff in AudioEffect::CYCLE {
             let s = eff.to_string();
-            assert_eq!(AudioEffect::from_str(&s), Some(*eff),
-                "roundtrip failed for {eff:?}");
+            assert_eq!(
+                AudioEffect::from_str(&s),
+                Some(*eff),
+                "roundtrip failed for {eff:?}"
+            );
         }
     }
 
@@ -305,7 +323,11 @@ mod tests {
 
     #[test]
     fn pulse_loud_returns_max_brightness() {
-        let bands = BandAmplitudes { bass: 1.0, mid: 1.0, treble: 1.0 };
+        let bands = BandAmplitudes {
+            bass: 1.0,
+            mid: 1.0,
+            treble: 1.0,
+        };
         match render_pulse(&bands) {
             LedOutput::Brightness(b) => assert_eq!(b, 4, "loud → brightness 4"),
             other => panic!("expected Brightness, got {other:?}"),
@@ -316,10 +338,17 @@ mod tests {
 
     #[test]
     fn color_shift_bass_dominant_is_reddish() {
-        let bands = BandAmplitudes { bass: 1.0, mid: 0.1, treble: 0.05 };
+        let bands = BandAmplitudes {
+            bass: 1.0,
+            mid: 0.1,
+            treble: 0.05,
+        };
         match render_color_shift(&bands) {
             LedOutput::Color { r, g, b, .. } => {
-                assert!(r > g && r > b, "bass-dominant should be reddish: r={r} g={g} b={b}");
+                assert!(
+                    r > g && r > b,
+                    "bass-dominant should be reddish: r={r} g={g} b={b}"
+                );
             }
             other => panic!("expected Color, got {other:?}"),
         }
@@ -327,10 +356,17 @@ mod tests {
 
     #[test]
     fn color_shift_treble_dominant_is_bluish() {
-        let bands = BandAmplitudes { bass: 0.05, mid: 0.1, treble: 1.0 };
+        let bands = BandAmplitudes {
+            bass: 0.05,
+            mid: 0.1,
+            treble: 1.0,
+        };
         match render_color_shift(&bands) {
             LedOutput::Color { r, g, b, .. } => {
-                assert!(b > r && b > g, "treble-dominant should be bluish: r={r} g={g} b={b}");
+                assert!(
+                    b > r && b > g,
+                    "treble-dominant should be bluish: r={r} g={g} b={b}"
+                );
             }
             other => panic!("expected Color, got {other:?}"),
         }
@@ -353,9 +389,18 @@ mod tests {
 
     #[test]
     fn wave_returns_color() {
-        let bands = BandAmplitudes { bass: 0.5, mid: 0.3, treble: 0.2 };
+        let bands = BandAmplitudes {
+            bass: 0.5,
+            mid: 0.3,
+            treble: 0.2,
+        };
         match render_wave(&bands, 1.0) {
-            LedOutput::Color { r, g, b, brightness } => {
+            LedOutput::Color {
+                r,
+                g,
+                b,
+                brightness,
+            } => {
                 assert!(r > 0 || g > 0 || b > 0, "wave should produce visible color");
                 assert!(brightness >= 1 && brightness <= 4);
             }
@@ -365,10 +410,22 @@ mod tests {
 
     #[test]
     fn breathe_returns_color() {
-        let bands = BandAmplitudes { bass: 0.5, mid: 0.3, treble: 0.2 };
+        let bands = BandAmplitudes {
+            bass: 0.5,
+            mid: 0.3,
+            treble: 0.2,
+        };
         match render_breathe(&bands, 0.5) {
-            LedOutput::Color { r, g, b, brightness } => {
-                assert!(r > 0 || g > 0 || b > 0, "breathe should produce visible color");
+            LedOutput::Color {
+                r,
+                g,
+                b,
+                brightness,
+            } => {
+                assert!(
+                    r > 0 || g > 0 || b > 0,
+                    "breathe should produce visible color"
+                );
                 assert!(brightness >= 1 && brightness <= 4);
             }
             other => panic!("expected Color, got {other:?}"),

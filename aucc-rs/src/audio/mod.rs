@@ -2,19 +2,19 @@ pub mod capture;
 pub mod effects;
 pub mod fft;
 
+use crate::ui::tui::UsbCmd;
 use std::path::PathBuf;
 use std::sync::{mpsc, Arc, Mutex};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
-use crate::ui::tui::UsbCmd;
 
 /// Amplitudes per frequency band, normalized to 0.0–1.0.
 /// Shared between the audio capture callback and the LED drive loop
 /// via `Arc<Mutex<BandAmplitudes>>`.
 #[derive(Debug, Clone, Default)]
 pub struct BandAmplitudes {
-    pub bass:   f32,
-    pub mid:    f32,
+    pub bass: f32,
+    pub mid: f32,
     pub treble: f32,
 }
 
@@ -56,110 +56,116 @@ pub fn spawn_audio_engine(
     lb_path: Option<PathBuf>,
 ) -> JoinHandle<()> {
     thread::spawn(move || {
-        // T-01-01: MUST be first — sets XDG_RUNTIME_DIR before cpal init.
         capture::setup_audio_env_for_root();
 
-        let bands = Arc::new(Mutex::new(BandAmplitudes::default()));
-
-        // Holds the active cpal stream. Dropping it stops capture.
-        let mut active_stream: Option<cpal::Stream> = None;
-        let mut effect_state = effects::AudioEffectState::new(effects::AudioEffect::Pulse);
-
-        'outer: loop {
-            // Wait for the first (or next) command.
-            let cmd = match audio_rx.recv() {
-                Ok(c) => c,
-                Err(_) => break 'outer, // sender dropped — TUI exited
-            };
-
-            match cmd {
-                AudioCmd::Enable { device_name, effect } => {
-                    // (Re)start capture stream
-                    active_stream = None; // drop previous stream if any
-                    let bands_clone = Arc::clone(&bands);
-                    match capture::build_input_stream(
-                        device_name.as_deref(),
-                        bands_clone,
-                    ) {
-                        Ok(stream) => active_stream = Some(stream),
-                        Err(e) => {
-                            eprintln!("Audio capture error: {e}");
-                            continue;
-                        }
-                    }
-                    effect_state = effects::AudioEffectState::new(effect);
-
-                    // LED drive sub-loop — runs until Disable or channel close.
-                    'drive: loop {
-                        let frame_start = Instant::now();
-
-                        // Check for incoming commands without blocking.
-                        match audio_rx.try_recv() {
-                            Ok(AudioCmd::Disable) => {
-                                active_stream = None;
-                                break 'drive;
-                            }
-                            Ok(AudioCmd::SetEffect(new_effect)) => {
-                                effect_state = effects::AudioEffectState::new(new_effect);
-                            }
-                            Ok(AudioCmd::Enable { device_name: dev, effect: eff }) => {
-                                // Re-enable: restart stream with new params
-                                active_stream = None;
-                                let b2 = Arc::clone(&bands);
-                                match capture::build_input_stream(dev.as_deref(), b2) {
-                                    Ok(s) => active_stream = Some(s),
-                                    Err(e) => eprintln!("Audio restart error: {e}"),
-                                }
-                                effect_state = effects::AudioEffectState::new(eff);
-                            }
-                            Err(mpsc::TryRecvError::Disconnected) => break 'outer,
-                            Err(mpsc::TryRecvError::Empty) => {} // nothing pending
-                        }
-
-                        // Render frame
-                        let current_bands = bands.lock()
-                            .map(|b| b.clone())
-                            .unwrap_or_default();
-
-                        let led_out = effect_state.render(&current_bands);
-                        effect_state.tick(1.0 / 30.0);
-
-                        send_led_output(&led_out, &usb_tx, lb_path.as_ref());
-
-                        // Sleep for the remaining frame budget
-                        let elapsed = frame_start.elapsed();
-                        if elapsed < FRAME_BUDGET {
-                            thread::sleep(FRAME_BUDGET - elapsed);
-                        }
-                    }
-                }
-                AudioCmd::Disable | AudioCmd::SetEffect(_) => {
-                    // No-op when engine is idle
-                }
-            }
-        }
-
-        // Clean up — stop capture on exit
-        drop(active_stream);
+        capture::with_stderr_suppressed(|| {
+            run_audio_engine_loop(audio_rx, usb_tx, lb_path);
+        });
     })
 }
 
-/// Send a single [`LedOutput`] frame to the USB worker and optionally lightbar.
-fn send_led_output(
-    output: &LedOutput,
-    usb_tx: &mpsc::Sender<UsbCmd>,
-    lb_path: Option<&PathBuf>,
+fn run_audio_engine_loop(
+    audio_rx: mpsc::Receiver<AudioCmd>,
+    usb_tx: mpsc::Sender<UsbCmd>,
+    lb_path: Option<PathBuf>,
 ) {
+    let bands = Arc::new(Mutex::new(BandAmplitudes::default()));
+    let mut active_stream: Option<cpal::Stream> = None;
+    let mut effect_state = effects::AudioEffectState::new(effects::AudioEffect::Pulse);
+
+    'outer: loop {
+        let cmd = match audio_rx.recv() {
+            Ok(c) => c,
+            Err(_) => break 'outer,
+        };
+
+        match cmd {
+            AudioCmd::Enable {
+                device_name,
+                effect,
+            } => {
+                active_stream = None;
+                let bands_clone = Arc::clone(&bands);
+                match capture::build_input_stream(device_name.as_deref(), bands_clone) {
+                    Ok(stream) => active_stream = Some(stream),
+                    Err(e) => {
+                        eprintln!("Audio capture error: {e}");
+                        continue;
+                    }
+                }
+                effect_state = effects::AudioEffectState::new(effect);
+
+                'drive: loop {
+                    let frame_start = Instant::now();
+
+                    match audio_rx.try_recv() {
+                        Ok(AudioCmd::Disable) => {
+                            active_stream = None;
+                            break 'drive;
+                        }
+                        Ok(AudioCmd::SetEffect(new_effect)) => {
+                            effect_state = effects::AudioEffectState::new(new_effect);
+                        }
+                        Ok(AudioCmd::Enable {
+                            device_name: dev,
+                            effect: eff,
+                        }) => {
+                            active_stream = None;
+                            let b2 = Arc::clone(&bands);
+                            match capture::build_input_stream(dev.as_deref(), b2) {
+                                Ok(s) => active_stream = Some(s),
+                                Err(e) => eprintln!("Audio restart error: {e}"),
+                            }
+                            effect_state = effects::AudioEffectState::new(eff);
+                        }
+                        Err(mpsc::TryRecvError::Disconnected) => break 'outer,
+                        Err(mpsc::TryRecvError::Empty) => {}
+                    }
+
+                    let current_bands = bands.lock().map(|b| b.clone()).unwrap_or_default();
+
+                    let led_out = effect_state.render(&current_bands);
+                    effect_state.tick(1.0 / 30.0);
+
+                    send_led_output(&led_out, &usb_tx, lb_path.as_ref());
+
+                    let elapsed = frame_start.elapsed();
+                    if elapsed < FRAME_BUDGET {
+                        thread::sleep(FRAME_BUDGET - elapsed);
+                    }
+                }
+            }
+            AudioCmd::Disable | AudioCmd::SetEffect(_) => {}
+        }
+    }
+
+    drop(active_stream);
+}
+
+/// Send a single [`LedOutput`] frame to the USB worker and optionally lightbar.
+fn send_led_output(output: &LedOutput, usb_tx: &mpsc::Sender<UsbCmd>, lb_path: Option<&PathBuf>) {
     match *output {
         LedOutput::Brightness(level) => {
             let _ = usb_tx.send(UsbCmd::AudioBrightness(level));
         }
-        LedOutput::Color { r, g, b, brightness } => {
-            let _ = usb_tx.send(UsbCmd::AudioColor { r, g, b, brightness });
+        LedOutput::Color {
+            r,
+            g,
+            b,
+            brightness,
+        } => {
+            let _ = usb_tx.send(UsbCmd::AudioColor {
+                r,
+                g,
+                b,
+                brightness,
+            });
             if let Some(path) = lb_path {
                 let _ = usb_tx.send(UsbCmd::LbColor {
                     path: path.clone(),
-                    r, g, b,
+                    r,
+                    g,
+                    b,
                     brightness,
                 });
             }
