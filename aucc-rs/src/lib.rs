@@ -1,5 +1,4 @@
 // Shared library: re-exports all modules for both binaries.
-pub mod audio;
 pub mod config;
 pub mod keyboard;
 pub mod lightbar;

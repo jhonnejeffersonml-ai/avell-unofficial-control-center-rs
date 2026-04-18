@@ -1,4 +1,4 @@
-# avell-unofficial-control-center-rs
+# avell-unofficial-control-center-rs v2.3.0
 
 [![Gitter](https://badges.gitter.im/Unofficial-CC/Lobby.svg)](https://gitter.im/Unofficial-CC/Lobby?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge)
 ![Rust](https://img.shields.io/badge/built%20with-Rust-orange?logo=rust)

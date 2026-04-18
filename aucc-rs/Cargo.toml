@@ -1,6 +1,6 @@
 [package]
 name = "aucc-rs"
-version = "2.2.0"
+version = "2.3.0"
 edition = "2021"
 description = "Linux driver and TUI for ITE 8291 RGB keyboard and ITE 8233 lightbar (Avell/Tongfang laptops)"
 license = "MIT"
@@ -24,9 +24,6 @@ ratatui = "0.29"
 crossterm = "0.28"
 clap    = { version = "4", features = ["derive"] }
 colored = "2"
-cpal    = "0.17.3"
-rustfft = "6.2"
-libm    = "0.2"
 libc    = "0.2"
 num_cpus = "1"
 
