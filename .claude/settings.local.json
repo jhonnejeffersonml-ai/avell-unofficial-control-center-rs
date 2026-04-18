@@ -1,0 +1,26 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cargo build *)",
+      "Bash(cargo test *)",
+      "Bash(pactl list *)",
+      "Bash(pw-cli help *)",
+      "Bash(./target/debug/aucc *)",
+      "Bash(sudo /media/lotus/dev/projetos/jhonne/avell-unofficial-control-center-rs/aucc-rs/target/debug/aucc-ui)",
+      "Bash(rm -f /tmp/aucc_tui.log /tmp/aucc_audio.log)",
+      "Bash(pkexec ./target/debug/aucc-ui)",
+      "Bash(sudo *)",
+      "Bash(/media/lotus/dev/projetos/jhonne/avell-unofficial-control-center-rs/aucc-rs/target/debug/aucc *)",
+      "Bash(cargo run *)",
+      "Bash(rustc /tmp/test_full.rs -o /tmp/test_full)",
+      "Bash(/tmp/test_full)",
+      "Bash(./target/debug/aucc-ui)",
+      "Bash(rustc /tmp/test_tui_audio.rs -o /tmp/test_tui_audio)",
+      "Bash(/tmp/test_tui_audio)",
+      "Bash(pw-cli list-objects *)",
+      "Bash(git add *)",
+      "Bash(git commit *)",
+      "Bash(git push *)"
+    ]
+  }
+}
