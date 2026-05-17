@@ -35,6 +35,16 @@ pub fn install(current_exe: &std::path::Path, bin_dest: &str) -> Result {
     fs::create_dir_all("/etc/aucc")
         .map_err(|e| format!("Erro ao criar /etc/aucc: {e}"))?;
 
+    // CLI /lightbar runs as non-root user (plugdev group via udev) but needs
+    // to persist state under /etc/aucc. Make the dir + existing config
+    // writable by the plugdev group; otherwise save silently fails (EACCES).
+    let _ = Command::new("chgrp")
+        .args(["-R", "plugdev", "/etc/aucc"])
+        .status();
+    let _ = Command::new("chmod")
+        .args(["-R", "g+w", "/etc/aucc"])
+        .status();
+
     fs::write(UDEV_RULE_PATH, UDEV_RULES)
         .map_err(|e| format!("Erro ao escrever regra udev: {e}"))?;
 

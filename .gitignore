@@ -104,3 +104,6 @@ venv.bak/
 .mypy_cache/
 .agent/
 .qwen/
+
+# Claude Code ctags index
+.claude/tags

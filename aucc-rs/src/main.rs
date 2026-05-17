@@ -282,7 +282,9 @@ fn run_lightbar(cli: &Cli) -> Result<(), Box<dyn std::error::Error>> {
 
     if cli.lb_disable {
         lightbar::disable(&path)?;
-        config::save(&LightbarConfig { enabled: false, ..Default::default() })?;
+        // Preserve user's keyboard persist preference; only flip enabled.
+        let existing = config::load();
+        config::save(&LightbarConfig { enabled: false, ..existing })?;
         println!("{}", "Lightbar desligado.".dimmed());
         return Ok(());
     }
@@ -291,13 +293,25 @@ fn run_lightbar(cli: &Cli) -> Result<(), Box<dyn std::error::Error>> {
         let (r, g, b) = aucc_rs::keyboard::colors::get_color(color_name)
             .ok_or_else(|| format!("Cor desconhecida: '{color_name}'"))?;
         lightbar::apply_color(&path, r, g, b, cli.lb_brightness)?;
-        config::save(&LightbarConfig { enabled: true, r, g, b, brightness: cli.lb_brightness, save_eeprom: false })?;
+        // Preserve save_eeprom preference set via TUI; only update color state.
+        let existing = config::load();
+        config::save(&LightbarConfig {
+            enabled: true,
+            r, g, b,
+            brightness: cli.lb_brightness,
+            save_eeprom: existing.save_eeprom,
+        })?;
         println!("{}", format!("Lightbar: cor '{color_name}' brilho {}% aplicada.", cli.lb_brightness).green());
         return Ok(());
     }
 
-    // --lb-restore: re-apply saved state silently
+    // --lb-restore: re-apply saved state. Log to stderr so the udev RUN+= call
+    // shows up in journalctl when something fails on boot.
     let cfg = config::load();
+    eprintln!(
+        "aucc --lb-restore: enabled={} rgb=({},{},{}) brightness={} path={}",
+        cfg.enabled, cfg.r, cfg.g, cfg.b, cfg.brightness, path.display()
+    );
     if !cfg.enabled {
         lightbar::disable(&path)?;
     } else {

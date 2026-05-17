@@ -85,9 +85,14 @@ install_binaries() {
     install -m 755 "$cli_bin" "$BIN_DIR/aucc"
     info "Binários instalados: $BIN_DIR/aucc-ui  $BIN_DIR/aucc"
 
-    # Ensure config directory exists for lightbar persistence
+    # Ensure config directory exists for lightbar persistence.
+    # CLI runs as plugdev user (no root) but must write here, so grant
+    # group rwx to plugdev. Otherwise lb-color/lb-disable saves silently
+    # fail with EACCES and persistence breaks.
     mkdir -p /etc/aucc
-    info "Diretório de config criado: /etc/aucc"
+    chgrp -R plugdev /etc/aucc
+    chmod -R g+w /etc/aucc
+    info "Diretório de config criado: /etc/aucc (gravável por plugdev)"
 }
 
 install_udev() {
