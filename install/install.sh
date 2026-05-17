@@ -15,6 +15,8 @@ PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 RUST_DIR="$PROJECT_DIR/aucc-rs"
 BIN_DIR="/usr/local/bin"
 UDEV_DIR="/etc/udev/rules.d"
+SYSTEMD_DIR="/etc/systemd/system"
+SLEEP_HOOK_DIR="/lib/systemd/system-sleep"
 POLKIT_DIR="/usr/share/polkit-1/actions"
 
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; NC='\033[0m'
@@ -103,6 +105,40 @@ install_udev() {
     info "udev recarregado."
 }
 
+install_systemd() {
+    info "Instalando systemd units para restauração da lightbar..."
+
+    # Boot-restore service — runs after udev settled, triggered also via SYSTEMD_WANTS.
+    cat > "$SYSTEMD_DIR/aucc-lightbar-restore.service" <<'EOF'
+[Unit]
+Description=Restore Avell lightbar state
+After=systemd-udev-settle.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/aucc --lb-restore
+StandardError=journal
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+    # Post-resume hook — called by systemd-sleep with pre|post arg.
+    mkdir -p "$SLEEP_HOOK_DIR"
+    cat > "$SLEEP_HOOK_DIR/aucc-lightbar" <<'EOF'
+#!/bin/sh
+# Restore Avell lightbar after resume from suspend/hibernate — managed by aucc
+[ "$1" = "post" ] && /usr/local/bin/aucc --lb-restore
+EOF
+    chmod +x "$SLEEP_HOOK_DIR/aucc-lightbar"
+
+    systemctl daemon-reload
+    systemctl enable --now aucc-lightbar-restore.service
+    info "systemd service habilitado: aucc-lightbar-restore.service"
+    info "sleep hook instalado: $SLEEP_HOOK_DIR/aucc-lightbar"
+}
+
 install_polkit() {
     info "Instalando polkit policy ($POLKIT_DIR/org.avell.aucc.policy)..."
     install -m 644 "$SCRIPT_DIR/org.avell.aucc.policy" "$POLKIT_DIR/org.avell.aucc.policy"
@@ -134,7 +170,7 @@ print_summary() {
     echo ""
     echo "  Lightbar — cor:     aucc --lb-color red --lb-brightness 50"
     echo "  Lightbar — deslig.: aucc --lb-disable"
-    echo "  Lightbar — restaura:aucc --lb-restore  (automático no boot via udev)"
+    echo "  Lightbar — restaura:aucc --lb-restore  (automático no boot e após suspend)"
     echo ""
     echo "  Atalho rápido:      $PROJECT_DIR/teclado"
     echo ""
@@ -155,6 +191,7 @@ fi
 
 install_binaries
 install_udev
+install_systemd
 install_polkit
 ensure_plugdev
 print_summary

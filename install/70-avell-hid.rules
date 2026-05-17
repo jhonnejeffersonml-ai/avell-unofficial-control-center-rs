@@ -3,12 +3,15 @@
 # Grants read/write access to members of the 'plugdev' group so that
 # keyboard RGB and lightbar control work WITHOUT root privileges.
 #
+# The SYSTEMD_WANTS entry triggers aucc-lightbar-restore.service whenever the
+# lightbar device appears (boot or reconnect). Resume from suspend is handled
+# by /lib/systemd/system-sleep/aucc-lightbar.
+#
 # Install:
+#   sudo ./install/install.sh
+#   — or manually —
 #   sudo cp 70-avell-hid.rules /etc/udev/rules.d/
 #   sudo udevadm control --reload-rules && sudo udevadm trigger
-#
-# Then add your user to plugdev (if not already):
-#   sudo usermod -aG plugdev $USER   # log out and back in to apply
 
 # ITE Device 8291 — RGB Keyboard (048d:600b)
 SUBSYSTEM=="usb", ATTRS{idVendor}=="048d", ATTRS{idProduct}=="600b", \
@@ -16,8 +19,8 @@ SUBSYSTEM=="usb", ATTRS{idVendor}=="048d", ATTRS{idProduct}=="600b", \
 
 # ITE Device 8233 — Front LED Lightbar (048d:7001)
 SUBSYSTEM=="hidraw", ATTRS{idVendor}=="048d", ATTRS{idProduct}=="7001", \
-    GROUP="plugdev", MODE="0660", TAG+="uaccess", \
-    RUN+="/usr/local/bin/aucc --lb-restore"
+    GROUP="plugdev", MODE="0660", TAG+="uaccess", TAG+="systemd", \
+    ENV{SYSTEMD_WANTS}+="aucc-lightbar-restore.service"
 
 SUBSYSTEM=="usb", ATTRS{idVendor}=="048d", ATTRS{idProduct}=="7001", \
     GROUP="plugdev", MODE="0660", TAG+="uaccess"

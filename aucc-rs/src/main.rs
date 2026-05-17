@@ -46,7 +46,7 @@ LIGHTBAR (não requer root se usuário está no grupo plugdev):\n  \
   O controlador ITE 8233 NÃO possui EEPROM — qualquer configuração\n  \
   é perdida ao reiniciar. Use --lb-color / --lb-disable para aplicar\n  \
   E persistir via software: o estado é salvo em /etc/aucc/lightbar.conf\n  \
-  e restaurado automaticamente a cada boot via regra udev.\n\
+  e restaurado automaticamente a cada boot e após suspend via systemd.\n\
 \n\
 TUI INTERATIVO:\n  \
   Execute 'pkexec aucc-ui' para a interface interativa completa.",
@@ -76,10 +76,10 @@ TUI INTERATIVO:\n  \
   # Lightbar — restaurar manualmente o estado salvo\n  \
   aucc --lb-restore\n\
 \n  \
-  # Ativar restauração automática da lightbar no boot (instala regra udev)\n  \
+  # Ativar restauração automática no boot e após suspend (instala systemd + udev)\n  \
   sudo aucc --install\n\
 \n  \
-  # Remover a regra udev de restauração automática\n  \
+  # Remover a instalação (systemd service, sleep hook e regra udev)\n  \
   sudo aucc --uninstall\n\
 \n  \
   # Perfil de energia silencioso\n  \
@@ -97,7 +97,7 @@ TUI INTERATIVO:\n  \
   (breathing/marquee/reactive/ripple aceitam sufixo de cor: breathingr, breathingg …)\n\
 \nPERSISTÊNCIA DA LIGHTBAR:\n  \
   Config salva em: /etc/aucc/lightbar.conf\n  \
-  Restaurada automaticamente via udev quando o dispositivo é detectado.\n  \
+  Restaurada automaticamente no boot e após suspend via systemd.\n  \
   Para ativar: sudo aucc --install"
 )]
 // Group is kept (without required) to document mutual exclusivity.
@@ -160,9 +160,9 @@ struct Cli {
 
     /// [Lightbar] Restaurar estado salvo de /etc/aucc/lightbar.conf
     ///
-    /// Executado automaticamente via udev a cada boot quando o dispositivo
-    /// ITE 8233 é detectado. Pode ser chamado manualmente sem root
-    /// (basta estar no grupo plugdev).
+    /// Executado automaticamente no boot (systemd) e após suspend (sleep hook)
+    /// quando o dispositivo ITE 8233 está disponível. Pode ser chamado
+    /// manualmente sem root (basta estar no grupo plugdev).
     #[arg(long)]
     lb_restore: bool,
 
@@ -170,10 +170,10 @@ struct Cli {
     #[arg(long)]
     lb_disable: bool,
 
-    /// [Lightbar] Definir cor sólida e salvar estado (persiste após reboot via udev)
+    /// [Lightbar] Definir cor sólida e salvar estado (persiste após reboot)
     ///
     /// A configuração é salva em /etc/aucc/lightbar.conf e restaurada
-    /// automaticamente no próximo boot. Use --lb-brightness para ajustar o brilho.
+    /// automaticamente no próximo boot e após suspend. Use --lb-brightness para ajustar o brilho.
     #[arg(long, value_name = "COR")]
     lb_color: Option<String>,
 
@@ -183,19 +183,20 @@ struct Cli {
 
     // ── Instalação ────────────────────────────────────────────────────────────
 
-    /// Instalar regra udev e copiar o binário para /usr/local/bin/aucc
+    /// Instalar systemd service, sleep hook, regra udev e binário
     ///
-    /// Escreve /etc/udev/rules.d/70-avell-hid.rules, cria /etc/aucc/,
-    /// recarrega o udev e copia este binário para /usr/local/bin/aucc.
-    /// Após isso, a lightbar será restaurada automaticamente sempre que o
-    /// sistema iniciar. Requer root (sudo).
+    /// Escreve /etc/udev/rules.d/70-avell-hid.rules,
+    /// /etc/systemd/system/aucc-lightbar-restore.service e
+    /// /lib/systemd/system-sleep/aucc-lightbar. Habilita o service para
+    /// restaurar a lightbar no boot e após suspend. Requer root (sudo).
     #[arg(long)]
     install: bool,
 
-    /// Remover a regra udev de restauração automática da lightbar
+    /// Remover systemd service, sleep hook e regra udev da lightbar
     ///
-    /// Remove /etc/udev/rules.d/70-avell-hid.rules e recarrega o udev.
-    /// Requer root (sudo).
+    /// Remove /etc/systemd/system/aucc-lightbar-restore.service,
+    /// /lib/systemd/system-sleep/aucc-lightbar e
+    /// /etc/udev/rules.d/70-avell-hid.rules. Requer root (sudo).
     #[arg(long)]
     uninstall: bool,
 }
