@@ -1720,7 +1720,6 @@ fn render_nvme_battery_card(f: &mut Frame, state: &AppState, area: Rect) {
             ])),
             chunks[idx],
         );
-        idx += 1;
     } else {
         if has_nvme {
             f.render_widget(
@@ -1969,61 +1968,6 @@ fn render_cpu_chart(f: &mut Frame, state: &AppState, area: Rect) {
     f.render_widget(chart, area);
 }
 
-// ── RAM Line Chart ──
-
-fn render_ram_chart(f: &mut Frame, state: &AppState, area: Rect) {
-    let h = &state.telemetry_history;
-
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .border_style(Style::default().fg(Color::Green))
-        .title(" ◈ HISTÓRICO RAM ");
-
-    if h.ram_usage_pct.is_empty() || h.ram_usage_pct.len() < 2 {
-        let text = vec![Line::from(vec![Span::styled(
-            "  Aguardando dados...",
-            Style::default().fg(Color::DarkGray),
-        )])];
-        let par = Paragraph::new(text).block(block);
-        f.render_widget(par, area);
-        return;
-    }
-
-    let ram_data: Vec<(f64, f64)> = h
-        .ram_usage_pct
-        .iter()
-        .enumerate()
-        .map(|(i, v)| (i as f64, *v as f64))
-        .collect();
-
-    let max_ram = h
-        .ram_usage_pct
-        .iter()
-        .cloned()
-        .fold(0f32, f32::max)
-        .ceil()
-        .max(1.0);
-
-    let x_axis = Axis::default()
-        .style(Style::default().fg(Color::DarkGray))
-        .bounds([0.0, h.ram_usage_pct.len().max(1) as f64]);
-
-    let y_axis = Axis::default()
-        .style(Style::default().fg(Color::DarkGray))
-        .bounds([0.0, max_ram as f64 * 1.1]);
-
-    let dataset = Dataset::default()
-        .marker(symbols::Marker::Braille)
-        .style(Style::default().fg(Color::Green))
-        .graph_type(GraphType::Line)
-        .data(&ram_data);
-
-    let chart = Chart::new(vec![dataset])
-        .block(block)
-        .x_axis(x_axis)
-        .y_axis(y_axis);
-    f.render_widget(chart, area);
-}
 
 // ── USB worker thread ─────────────────────────────────────────────────────────
 
