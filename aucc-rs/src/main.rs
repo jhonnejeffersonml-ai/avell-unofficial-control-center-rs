@@ -52,6 +52,9 @@ TUI INTERATIVO:\n  \
   Execute 'pkexec aucc-ui' para a interface interativa completa.",
     after_help = "EXEMPLOS:\n\
 \n  \
+  # Desligar todos os LEDs (teclado + lightbar)\n  \
+  sudo aucc --off\n\
+\n  \
   # Teclado — cor sólida temporária\n  \
   sudo aucc --color red\n\
 \n  \
@@ -102,7 +105,7 @@ TUI INTERATIVO:\n  \
 )]
 // Group is kept (without required) to document mutual exclusivity.
 // arg_required_else_help = true on the command handles the no-args case.
-#[command(group(ArgGroup::new("action").args(["color","h_alt","v_alt","style","disable","profile","tdp","telemetry","lb_restore","lb_disable","lb_color","version","install","uninstall"])))]
+#[command(group(ArgGroup::new("action").args(["color","h_alt","v_alt","style","disable","off","profile","tdp","telemetry","lb_restore","lb_disable","lb_color","version","install","uninstall"])))]
 struct Cli {
     /// Cor sólida do teclado: red, green, blue, teal, purple, pink, yellow, white, orange …
     #[arg(short = 'c', long, value_name = "COR")]
@@ -123,6 +126,10 @@ struct Cli {
     /// Desligar iluminação do teclado
     #[arg(short = 'd', long)]
     disable: bool,
+
+    /// Desligar todos os LEDs: teclado e lightbar (requer root)
+    #[arg(long)]
+    off: bool,
 
     /// Perfil de energia: silent, balanced, turbo
     #[arg(short = 'p', long, value_name = "PERFIL")]
@@ -222,6 +229,35 @@ fn main() {
     // Telemetry needs no root — run before root check
     if cli.telemetry {
         print_telemetry();
+        return;
+    }
+
+    // --off: desliga teclado + lightbar. Requer root para o teclado.
+    if cli.off {
+        require_root();
+        let dev = match KeyboardDevice::open() {
+            Ok(d) => d,
+            Err(e) => {
+                eprintln!("{} {e}", "Dispositivo não encontrado:".red().bold());
+                std::process::exit(1);
+            }
+        };
+        if let Err(e) = dev.disable() {
+            eprintln!("{} {e}", "Erro teclado:".red().bold());
+        } else {
+            println!("{}", "Teclado desligado.".dimmed());
+        }
+        if let Some(path) = lightbar::find_hidraw_path() {
+            if let Err(e) = lightbar::disable(&path) {
+                eprintln!("{} {e}", "Erro lightbar:".red().bold());
+            } else {
+                let existing = config::load();
+                let _ = config::save(&LightbarConfig { enabled: false, ..existing });
+                println!("{}", "Lightbar desligada.".dimmed());
+            }
+        } else {
+            eprintln!("{}", "Lightbar não encontrada (ITE 8233), ignorando.".yellow());
+        }
         return;
     }
 
