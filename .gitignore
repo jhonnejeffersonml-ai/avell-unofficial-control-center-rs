@@ -107,3 +107,6 @@ venv.bak/
 
 # Claude Code ctags index
 .claude/tags
+
+# SonarQube
+.scannerwork/
