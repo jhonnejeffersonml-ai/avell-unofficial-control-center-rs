@@ -91,9 +91,14 @@ install_binaries() {
     # CLI runs as plugdev user (no root) but must write here, so grant
     # group rwx to plugdev. Otherwise lb-color/lb-disable saves silently
     # fail with EACCES and persistence breaks.
+    # Mode 3775: setgid so files created here inherit group plugdev (root-created
+    # configs would otherwise be root:root 0644 and break non-root commands), and
+    # sticky so a plugdev member cannot unlink another user's file and plant a
+    # symlink in its place.
     mkdir -p /etc/aucc
     chgrp -R plugdev /etc/aucc
     chmod -R g+w /etc/aucc
+    chmod 3775 /etc/aucc
     info "Diretório de config criado: /etc/aucc (gravável por plugdev)"
 }
 

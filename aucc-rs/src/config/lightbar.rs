@@ -1,6 +1,7 @@
 use super::parse_kv;
 use std::fs;
 use std::io::Write;
+use std::os::unix::fs::OpenOptionsExt;
 use std::path::Path;
 
 pub const CONFIG_PATH: &str = "/etc/aucc/lightbar.conf";
@@ -73,10 +74,14 @@ pub fn save(cfg: &LightbarConfig) -> std::io::Result<()> {
     if let Some(parent) = Path::new(CONFIG_PATH).parent() {
         fs::create_dir_all(parent)?;
     }
+    // O_NOFOLLOW: /etc/aucc is group-writable by plugdev, so a member could
+    // replace this file with a symlink to an arbitrary root-owned path and have
+    // the next root-side write truncate it.
     let mut f = fs::OpenOptions::new()
         .write(true)
         .create(true)
         .truncate(true)
+        .custom_flags(libc::O_NOFOLLOW)
         .open(CONFIG_PATH)?;
     writeln!(f, "enabled={}", cfg.enabled)?;
     writeln!(f, "r={}", cfg.r)?;
@@ -92,10 +97,12 @@ pub fn save_to(cfg: &LightbarConfig, path: &str) -> std::io::Result<()> {
     if let Some(parent) = Path::new(path).parent() {
         fs::create_dir_all(parent).ok();
     }
+    // O_NOFOLLOW — see `save`.
     let mut f = fs::OpenOptions::new()
         .write(true)
         .create(true)
         .truncate(true)
+        .custom_flags(libc::O_NOFOLLOW)
         .open(path)?;
     writeln!(f, "enabled={}", cfg.enabled)?;
     writeln!(f, "r={}", cfg.r)?;

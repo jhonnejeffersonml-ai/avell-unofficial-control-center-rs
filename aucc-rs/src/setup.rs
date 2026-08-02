@@ -78,10 +78,15 @@ type Result = std::result::Result<String, String>;
 
 pub fn install(current_exe: &std::path::Path, bin_dest: &str) -> Result {
     // 1. Config directory — plugdev-writable so CLI (non-root) can save state.
+    // Mode 3775: setgid so files created here inherit group plugdev (root-created
+    // configs would otherwise be root:root 0644 and break non-root commands), and
+    // sticky so a plugdev member cannot unlink another user's file and plant a
+    // symlink in its place.
     fs::create_dir_all("/etc/aucc")
         .map_err(|e| format!("Erro ao criar /etc/aucc: {e}"))?;
     let _ = Command::new("chgrp").args(["-R", "plugdev", "/etc/aucc"]).status();
     let _ = Command::new("chmod").args(["-R", "g+w", "/etc/aucc"]).status();
+    let _ = Command::new("chmod").args(["3775", "/etc/aucc"]).status();
 
     // 2. Binary copy — must happen before systemctl enable --now starts the service.
     let src_canonical  = fs::canonicalize(current_exe).unwrap_or_else(|_| current_exe.to_path_buf());

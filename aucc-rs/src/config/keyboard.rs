@@ -1,6 +1,7 @@
 use super::parse_kv;
 use std::fs;
 use std::io::Write;
+use std::os::unix::fs::OpenOptionsExt;
 use std::path::Path;
 
 pub const KEYBOARD_CONFIG_PATH: &str = "/etc/aucc/keyboard.conf";
@@ -122,10 +123,14 @@ fn write_to(cfg: &KeyboardConfig, path: &str) -> std::io::Result<()> {
     if let Some(parent) = Path::new(path).parent() {
         fs::create_dir_all(parent)?;
     }
+    // O_NOFOLLOW: /etc/aucc is group-writable by plugdev, so a member could
+    // replace this file with a symlink to an arbitrary root-owned path and have
+    // the next root-side write truncate it.
     let mut f = fs::OpenOptions::new()
         .write(true)
         .create(true)
         .truncate(true)
+        .custom_flags(libc::O_NOFOLLOW)
         .open(path)?;
     writeln!(f, "mode={}", cfg.mode.as_str())?;
     writeln!(f, "r={}", cfg.r)?;
