@@ -977,10 +977,15 @@ Expected: `mode=off` após o disable; o `--kb-restore` mantém o teclado apagado
 
 ```bash
 sudo ./target/release/aucc --style breathingg --speed 3
-sudo ./target/release/aucc --disable
+cat /etc/aucc/keyboard.conf
 sudo ./target/release/aucc --kb-restore
 ```
-Expected: o efeito breathing verde volta após o restore.
+Expected: `mode=effect`, `effect=breathing`, `letter=g`, `speed=3`; o
+`--kb-restore` traz o breathing verde de volta.
+
+Não intercale um `--disable` aqui: ele grava `mode=off`, e restaurar passaria a
+significar "manter apagado" — correto pelo spec, mas não é o que este passo
+verifica.
 
 - [ ] **Step 6: Rodar a suíte completa**
 
