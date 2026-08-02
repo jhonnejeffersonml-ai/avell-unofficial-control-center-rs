@@ -10,50 +10,59 @@ const UDEV_RULES: &str = "\
 # Grants read/write access to members of the 'plugdev' group so that
 # keyboard RGB and lightbar control work WITHOUT root privileges.
 #
-# The SYSTEMD_WANTS entry triggers aucc-lightbar-restore.service whenever the
-# lightbar device appears (boot or reconnect). Resume from suspend is handled
-# by /lib/systemd/system-sleep/aucc-lightbar.
+# The SYSTEMD_WANTS entries trigger aucc-restore.service when the devices
+# appear (boot or reconnect) and when the AC adapter is plugged or unplugged.
+# The EC clears the keyboard backlight on those power events, so the state has
+# to be reapplied. Resume from suspend is handled by
+# /lib/systemd/system-sleep/aucc-lightbar.
 
 # ITE Device 8291 — RGB Keyboard (048d:600b)
 SUBSYSTEM==\"usb\", ATTRS{idVendor}==\"048d\", ATTRS{idProduct}==\"600b\", \\
-    GROUP=\"plugdev\", MODE=\"0660\", TAG+=\"uaccess\"
+    GROUP=\"plugdev\", MODE=\"0660\", TAG+=\"uaccess\", TAG+=\"systemd\", \\
+    ENV{SYSTEMD_WANTS}+=\"aucc-restore.service\"
 
 # ITE Device 8233 — Front LED Lightbar (048d:7001)
 SUBSYSTEM==\"hidraw\", ATTRS{idVendor}==\"048d\", ATTRS{idProduct}==\"7001\", \\
     GROUP=\"plugdev\", MODE=\"0660\", TAG+=\"uaccess\", TAG+=\"systemd\", \\
-    ENV{SYSTEMD_WANTS}+=\"aucc-lightbar-restore.service\"
+    ENV{SYSTEMD_WANTS}+=\"aucc-restore.service\"
 
 SUBSYSTEM==\"usb\", ATTRS{idVendor}==\"048d\", ATTRS{idProduct}==\"7001\", \\
     GROUP=\"plugdev\", MODE=\"0660\", TAG+=\"uaccess\"
+
+# AC adapter plugged/unplugged — the EC turns the keyboard backlight off here.
+SUBSYSTEM==\"power_supply\", ACTION==\"change\", ATTR{type}==\"Mains\", \\
+    TAG+=\"systemd\", ENV{SYSTEMD_WANTS}+=\"aucc-restore.service\"
 ";
 
-const LIGHTBAR_RESTORE_SERVICE: &str = "\
+const RESTORE_SERVICE: &str = "\
 [Unit]
-Description=Restore Avell lightbar state
+Description=Restore Avell keyboard and lightbar state
 After=systemd-udev-settle.service
 
 [Service]
 Type=oneshot
-ExecStart=/usr/local/bin/aucc --lb-restore
+ExecStart=/usr/local/bin/aucc --restore
 StandardError=journal
-RemainAfterExit=yes
 
 [Install]
 WantedBy=multi-user.target
 ";
 
 // Called by systemd-sleep with args (pre|post) (suspend|hibernate|...).
-const LIGHTBAR_SLEEP_HOOK: &str = "\
+const RESTORE_SLEEP_HOOK: &str = "\
 #!/bin/sh
-# Restore Avell lightbar after resume from suspend/hibernate — managed by aucc
-[ \"$1\" = \"post\" ] && /usr/local/bin/aucc --lb-restore
+# Restore Avell keyboard and lightbar after resume — managed by aucc
+[ \"$1\" = \"post\" ] && /usr/local/bin/aucc --restore
 ";
 
-pub const UDEV_RULE_PATH: &str      = "/etc/udev/rules.d/70-avell-hid.rules";
-pub const RESTORE_SERVICE_PATH: &str = "/etc/systemd/system/aucc-lightbar-restore.service";
-pub const SLEEP_HOOK_PATH: &str     = "/lib/systemd/system-sleep/aucc-lightbar";
-pub const INSTALL_BIN_PATH: &str    = "/usr/local/bin/aucc";
-pub const INSTALL_UI_BIN_PATH: &str = "/usr/local/bin/aucc-ui";
+pub const UDEV_RULE_PATH: &str       = "/etc/udev/rules.d/70-avell-hid.rules";
+pub const RESTORE_SERVICE_PATH: &str = "/etc/systemd/system/aucc-restore.service";
+/// Pre-0.2 unit name, removed on install so the old one does not linger.
+pub const OLD_RESTORE_SERVICE_PATH: &str =
+    "/etc/systemd/system/aucc-lightbar-restore.service";
+pub const SLEEP_HOOK_PATH: &str      = "/lib/systemd/system-sleep/aucc-lightbar";
+pub const INSTALL_BIN_PATH: &str     = "/usr/local/bin/aucc";
+pub const INSTALL_UI_BIN_PATH: &str  = "/usr/local/bin/aucc-ui";
 
 type Result = std::result::Result<String, String>;
 
@@ -80,16 +89,23 @@ pub fn install(current_exe: &std::path::Path, bin_dest: &str) -> Result {
     fs::write(UDEV_RULE_PATH, UDEV_RULES)
         .map_err(|e| format!("Erro ao escrever regra udev: {e}"))?;
 
+    // 3b. Migration: drop the pre-0.2 unit so two services do not race to
+    // restore the same devices.
+    let _ = Command::new("systemctl")
+        .args(["disable", "--now", "aucc-lightbar-restore.service"])
+        .status();
+    let _ = fs::remove_file(OLD_RESTORE_SERVICE_PATH);
+
     // 4. systemd service (boot restore).
     fs::create_dir_all("/etc/systemd/system")
         .map_err(|e| format!("Erro ao criar /etc/systemd/system: {e}"))?;
-    fs::write(RESTORE_SERVICE_PATH, LIGHTBAR_RESTORE_SERVICE)
+    fs::write(RESTORE_SERVICE_PATH, RESTORE_SERVICE)
         .map_err(|e| format!("Erro ao escrever {RESTORE_SERVICE_PATH}: {e}"))?;
 
     // 5. system-sleep hook (post-resume restore).
     fs::create_dir_all("/lib/systemd/system-sleep")
         .map_err(|e| format!("Erro ao criar /lib/systemd/system-sleep: {e}"))?;
-    fs::write(SLEEP_HOOK_PATH, LIGHTBAR_SLEEP_HOOK)
+    fs::write(SLEEP_HOOK_PATH, RESTORE_SLEEP_HOOK)
         .map_err(|e| format!("Erro ao escrever {SLEEP_HOOK_PATH}: {e}"))?;
     Command::new("chmod").args(["+x", SLEEP_HOOK_PATH]).status()
         .map_err(|e| format!("chmod +x {SLEEP_HOOK_PATH} falhou: {e}"))?;
@@ -99,12 +115,12 @@ pub fn install(current_exe: &std::path::Path, bin_dest: &str) -> Result {
         .map_err(|e| format!("systemctl daemon-reload falhou: {e}"))?;
 
     Command::new("systemctl")
-        .args(["enable", "--now", "aucc-lightbar-restore.service"])
+        .args(["enable", "--now", "aucc-restore.service"])
         .status()
         .map_err(|e| format!("systemctl enable falhou: {e}"))?
         .success()
         .then_some(())
-        .ok_or_else(|| "systemctl enable aucc-lightbar-restore.service retornou erro".to_string())?;
+        .ok_or_else(|| "systemctl enable aucc-restore.service retornou erro".to_string())?;
 
     // 7. udev reload so SYSTEMD_WANTS takes effect on next device event.
     Command::new("udevadm").args(["control", "--reload-rules"]).status()
@@ -129,10 +145,13 @@ pub fn uninstall(bin_dest: &str) -> Result {
 
     // Disable and stop the service before removing the files.
     let _ = Command::new("systemctl")
+        .args(["disable", "--now", "aucc-restore.service"])
+        .status();
+    let _ = Command::new("systemctl")
         .args(["disable", "--now", "aucc-lightbar-restore.service"])
         .status();
 
-    for path in [RESTORE_SERVICE_PATH, SLEEP_HOOK_PATH] {
+    for path in [RESTORE_SERVICE_PATH, OLD_RESTORE_SERVICE_PATH, SLEEP_HOOK_PATH] {
         match fs::remove_file(path) {
             Ok(_) => msgs.push(format!("{path} removido")),
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}

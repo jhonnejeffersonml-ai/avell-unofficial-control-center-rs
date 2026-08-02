@@ -1,11 +1,13 @@
-# udev rules for Avell Storm 470 (TongFang chassis) HID devices
+# udev rules for Avell Storm 470 (TongFang chassis) HID devices — managed by aucc
 #
 # Grants read/write access to members of the 'plugdev' group so that
 # keyboard RGB and lightbar control work WITHOUT root privileges.
 #
-# The SYSTEMD_WANTS entry triggers aucc-lightbar-restore.service whenever the
-# lightbar device appears (boot or reconnect). Resume from suspend is handled
-# by /lib/systemd/system-sleep/aucc-lightbar.
+# The SYSTEMD_WANTS entries trigger aucc-restore.service when the devices
+# appear (boot or reconnect) and when the AC adapter is plugged or unplugged.
+# The EC clears the keyboard backlight on those power events, so the state has
+# to be reapplied. Resume from suspend is handled by
+# /lib/systemd/system-sleep/aucc-lightbar.
 #
 # Install:
 #   sudo ./install/install.sh
@@ -15,12 +17,17 @@
 
 # ITE Device 8291 — RGB Keyboard (048d:600b)
 SUBSYSTEM=="usb", ATTRS{idVendor}=="048d", ATTRS{idProduct}=="600b", \
-    GROUP="plugdev", MODE="0660", TAG+="uaccess"
+    GROUP="plugdev", MODE="0660", TAG+="uaccess", TAG+="systemd", \
+    ENV{SYSTEMD_WANTS}+="aucc-restore.service"
 
 # ITE Device 8233 — Front LED Lightbar (048d:7001)
 SUBSYSTEM=="hidraw", ATTRS{idVendor}=="048d", ATTRS{idProduct}=="7001", \
     GROUP="plugdev", MODE="0660", TAG+="uaccess", TAG+="systemd", \
-    ENV{SYSTEMD_WANTS}+="aucc-lightbar-restore.service"
+    ENV{SYSTEMD_WANTS}+="aucc-restore.service"
 
 SUBSYSTEM=="usb", ATTRS{idVendor}=="048d", ATTRS{idProduct}=="7001", \
     GROUP="plugdev", MODE="0660", TAG+="uaccess"
+
+# AC adapter plugged/unplugged — the EC turns the keyboard backlight off here.
+SUBSYSTEM=="power_supply", ACTION=="change", ATTR{type}=="Mains", \
+    TAG+="systemd", ENV{SYSTEMD_WANTS}+="aucc-restore.service"

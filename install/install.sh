@@ -101,24 +101,27 @@ install_udev() {
     info "Instalando regra udev ($UDEV_DIR/70-avell-hid.rules)..."
     install -m 644 "$SCRIPT_DIR/70-avell-hid.rules" "$UDEV_DIR/70-avell-hid.rules"
     udevadm control --reload-rules
-    udevadm trigger --subsystem-match=usb --subsystem-match=hidraw
+    udevadm trigger --subsystem-match=usb --subsystem-match=hidraw --subsystem-match=power_supply
     info "udev recarregado."
 }
 
 install_systemd() {
-    info "Instalando systemd units para restauração da lightbar..."
+    info "Instalando systemd units para restauração do teclado e da lightbar..."
+
+    # Migration: remove the pre-0.2 unit.
+    systemctl disable --now aucc-lightbar-restore.service 2>/dev/null || true
+    rm -f "$SYSTEMD_DIR/aucc-lightbar-restore.service"
 
     # Boot-restore service — runs after udev settled, triggered also via SYSTEMD_WANTS.
-    cat > "$SYSTEMD_DIR/aucc-lightbar-restore.service" <<'EOF'
+    cat > "$SYSTEMD_DIR/aucc-restore.service" <<'EOF'
 [Unit]
-Description=Restore Avell lightbar state
+Description=Restore Avell keyboard and lightbar state
 After=systemd-udev-settle.service
 
 [Service]
 Type=oneshot
-ExecStart=/usr/local/bin/aucc --lb-restore
+ExecStart=/usr/local/bin/aucc --restore
 StandardError=journal
-RemainAfterExit=yes
 
 [Install]
 WantedBy=multi-user.target
@@ -128,14 +131,14 @@ EOF
     mkdir -p "$SLEEP_HOOK_DIR"
     cat > "$SLEEP_HOOK_DIR/aucc-lightbar" <<'EOF'
 #!/bin/sh
-# Restore Avell lightbar after resume from suspend/hibernate — managed by aucc
-[ "$1" = "post" ] && /usr/local/bin/aucc --lb-restore
+# Restore Avell keyboard and lightbar after resume — managed by aucc
+[ "$1" = "post" ] && /usr/local/bin/aucc --restore
 EOF
     chmod +x "$SLEEP_HOOK_DIR/aucc-lightbar"
 
     systemctl daemon-reload
-    systemctl enable --now aucc-lightbar-restore.service
-    info "systemd service habilitado: aucc-lightbar-restore.service"
+    systemctl enable --now aucc-restore.service
+    info "systemd service habilitado: aucc-restore.service"
     info "sleep hook instalado: $SLEEP_HOOK_DIR/aucc-lightbar"
 }
 
@@ -170,7 +173,7 @@ print_summary() {
     echo ""
     echo "  Lightbar — cor:     aucc --lb-color red --lb-brightness 50"
     echo "  Lightbar — deslig.: aucc --lb-disable"
-    echo "  Lightbar — restaura:aucc --lb-restore  (automático no boot e após suspend)"
+    echo "  Restaurar tudo:     aucc --restore  (automático no boot, na troca AC/bateria e após suspend)"
     echo ""
     echo "  Atalho rápido:      $PROJECT_DIR/teclado"
     echo ""
