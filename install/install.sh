@@ -214,8 +214,10 @@ if [ "$SKIP_BUILD" = false ]; then
 fi
 
 install_binaries
-install_udev
+# systemd before udev: the rules name aucc-restore.service, and install_udev's
+# udevadm trigger fires SYSTEMD_WANTS for it immediately.
 install_systemd
+install_udev
 install_polkit
 ensure_plugdev
 print_summary

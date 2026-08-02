@@ -104,17 +104,16 @@ pub fn install(current_exe: &std::path::Path, bin_dest: &str) -> Result {
         format!("binário NÃO atualizado (este já é o instalado — rode o novo executável e instale novamente)")
     };
 
-    // 3. udev rules.
-    fs::write(UDEV_RULE_PATH, UDEV_RULES)
-        .map_err(|e| format!("Erro ao escrever regra udev: {e}"))?;
-
-    // 4. systemd service (boot restore).
+    // 3. systemd service (boot restore). The unit must exist and be enabled
+    // before the udev rules that name it are written: if any of this fails,
+    // the rules pointing at a nonexistent unit would leave the machine with no
+    // restore at all — worse than the pre-upgrade state.
     fs::create_dir_all("/etc/systemd/system")
         .map_err(|e| format!("Erro ao criar /etc/systemd/system: {e}"))?;
     fs::write(RESTORE_SERVICE_PATH, RESTORE_SERVICE)
         .map_err(|e| format!("Erro ao escrever {RESTORE_SERVICE_PATH}: {e}"))?;
 
-    // 5. system-sleep hook (post-resume restore).
+    // 4. system-sleep hook (post-resume restore).
     fs::create_dir_all("/lib/systemd/system-sleep")
         .map_err(|e| format!("Erro ao criar /lib/systemd/system-sleep: {e}"))?;
     fs::write(SLEEP_HOOK_PATH, RESTORE_SLEEP_HOOK)
@@ -122,7 +121,7 @@ pub fn install(current_exe: &std::path::Path, bin_dest: &str) -> Result {
     Command::new("chmod").args(["+x", SLEEP_HOOK_PATH]).status()
         .map_err(|e| format!("chmod +x {SLEEP_HOOK_PATH} falhou: {e}"))?;
 
-    // 6. Activate — daemon-reload first so systemd sees the new unit file.
+    // 5. Activate — daemon-reload first so systemd sees the new unit file.
     Command::new("systemctl").args(["daemon-reload"]).status()
         .map_err(|e| format!("systemctl daemon-reload falhou: {e}"))?;
 
@@ -133,6 +132,10 @@ pub fn install(current_exe: &std::path::Path, bin_dest: &str) -> Result {
         .success()
         .then_some(())
         .ok_or_else(|| "systemctl enable aucc-restore.service retornou erro".to_string())?;
+
+    // 6. udev rules — written only now that the unit they reference is active.
+    fs::write(UDEV_RULE_PATH, UDEV_RULES)
+        .map_err(|e| format!("Erro ao escrever regra udev: {e}"))?;
 
     // 7. udev reload so SYSTEMD_WANTS takes effect on next device event.
     Command::new("udevadm").args(["control", "--reload-rules"]).status()
