@@ -77,10 +77,15 @@ pub fn save(cfg: &LightbarConfig) -> std::io::Result<()> {
     // O_NOFOLLOW: /etc/aucc is group-writable by plugdev, so a member could
     // replace this file with a symlink to an arbitrary root-owned path and have
     // the next root-side write truncate it.
+    // mode 0664 so the file is group-writable and a config created by one side
+    // (root keyboard commands / non-root lightbar commands) stays writable by the
+    // other within plugdev. Caveat: open(2) masks this with the caller's umask,
+    // so a root caller running with the usual 0022 still lands on 0644.
     let mut f = fs::OpenOptions::new()
         .write(true)
         .create(true)
         .truncate(true)
+        .mode(0o664)
         .custom_flags(libc::O_NOFOLLOW)
         .open(CONFIG_PATH)?;
     writeln!(f, "enabled={}", cfg.enabled)?;
@@ -97,11 +102,12 @@ pub fn save_to(cfg: &LightbarConfig, path: &str) -> std::io::Result<()> {
     if let Some(parent) = Path::new(path).parent() {
         fs::create_dir_all(parent).ok();
     }
-    // O_NOFOLLOW — see `save`.
+    // O_NOFOLLOW and mode 0664 — see `save`.
     let mut f = fs::OpenOptions::new()
         .write(true)
         .create(true)
         .truncate(true)
+        .mode(0o664)
         .custom_flags(libc::O_NOFOLLOW)
         .open(path)?;
     writeln!(f, "enabled={}", cfg.enabled)?;

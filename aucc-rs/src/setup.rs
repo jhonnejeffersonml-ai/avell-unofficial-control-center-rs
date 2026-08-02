@@ -82,15 +82,24 @@ type Result = std::result::Result<String, String>;
 
 pub fn install(current_exe: &std::path::Path, bin_dest: &str) -> Result {
     // 1. Config directory — plugdev-writable so CLI (non-root) can save state.
-    // Mode 3775: setgid so files created here inherit group plugdev (root-created
-    // configs would otherwise be root:root 0644 and break non-root commands), and
-    // sticky so a plugdev member cannot unlink another user's file and plant a
-    // symlink in its place.
+    // Mode 2775: setgid so files created here inherit group plugdev. Setgid alone
+    // only fixes the group, not the writability — the configs are also created
+    // with mode 0664 (see config::keyboard/lightbar), which is what actually
+    // makes a config written by one side usable by the other. The chmod -R g+w
+    // below covers files already on disk, since open(2) masks the 0664 with the
+    // caller's umask (root's usual 0022 lands on 0644).
+    // No sticky bit: with fs.protected_regular=2 (Debian/Ubuntu default) a sticky,
+    // group-writable directory makes the kernel refuse an O_CREAT open of a file
+    // the opener does not own — root included — which silently broke every
+    // root-side save once a non-root command had created the config. The symlink
+    // attack sticky was guarding against is already blocked by O_NOFOLLOW on all
+    // config writers, plus fs.protected_hardlinks=1 for the hardlink variant; the
+    // code never unlinks, so sticky was buying little.
     fs::create_dir_all("/etc/aucc")
         .map_err(|e| format!("Erro ao criar /etc/aucc: {e}"))?;
     let _ = Command::new("chgrp").args(["-R", "plugdev", "/etc/aucc"]).status();
     let _ = Command::new("chmod").args(["-R", "g+w", "/etc/aucc"]).status();
-    let _ = Command::new("chmod").args(["3775", "/etc/aucc"]).status();
+    let _ = Command::new("chmod").args(["2775", "/etc/aucc"]).status();
 
     // 2. Binary copy — must happen before systemctl enable --now starts the service.
     let src_canonical  = fs::canonicalize(current_exe).unwrap_or_else(|_| current_exe.to_path_buf());

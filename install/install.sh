@@ -91,14 +91,23 @@ install_binaries() {
     # CLI runs as plugdev user (no root) but must write here, so grant
     # group rwx to plugdev. Otherwise lb-color/lb-disable saves silently
     # fail with EACCES and persistence breaks.
-    # Mode 3775: setgid so files created here inherit group plugdev (root-created
-    # configs would otherwise be root:root 0644 and break non-root commands), and
-    # sticky so a plugdev member cannot unlink another user's file and plant a
-    # symlink in its place.
+    # Mode 2775: setgid so files created here inherit group plugdev. Setgid alone
+    # only fixes the group, not the writability — the configs are also created
+    # with mode 0664 (see config::keyboard/lightbar), which is what actually
+    # makes a config written by one side usable by the other. The chmod -R g+w
+    # above covers files already on disk, since open(2) masks the 0664 with the
+    # caller's umask (root's usual 0022 lands on 0644).
+    # No sticky bit: with fs.protected_regular=2 (Debian/Ubuntu default) a sticky,
+    # group-writable directory makes the kernel refuse an O_CREAT open of a file
+    # the opener does not own — root included — which silently broke every
+    # root-side save once a non-root command had created the config. The symlink
+    # attack sticky was guarding against is already blocked by O_NOFOLLOW on all
+    # config writers, plus fs.protected_hardlinks=1 for the hardlink variant; the
+    # code never unlinks, so sticky was buying little.
     mkdir -p /etc/aucc
     chgrp -R plugdev /etc/aucc
     chmod -R g+w /etc/aucc
-    chmod 3775 /etc/aucc
+    chmod 2775 /etc/aucc
     info "Diretório de config criado: /etc/aucc (gravável por plugdev)"
 }
 
