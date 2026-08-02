@@ -121,14 +121,15 @@ After=systemd-udev-settle.service
 
 [Service]
 Type=oneshot
-# The EC blanks the keyboard backlight once, shortly after a power event
-# (AC plug/unplug), overriding whatever state we just applied. We reapply
-# the state again after a short delay to win that race. The delay value
-# (1s) comes from a measurement on the target machine — do not tune it
-# blindly. The first ExecStart is prefixed with '-' so a transient failure
-# (e.g. the keyboard USB device not yet settled at boot) does not abort the
-# retry that follows; the final ExecStart is left unprefixed so a genuine
-# persistent failure still surfaces in `systemctl status`.
+# Observed: the EC blanks the keyboard backlight once, shortly after a
+# power event (AC plug/unplug), overriding whatever state we just applied.
+# So the state is applied again after a short delay. How long after the
+# event the EC blanks was never measured, so the 1s value is an
+# unvalidated first choice, not a measurement. The first ExecStart is
+# prefixed with '-' so a transient failure (e.g. the keyboard USB device
+# not yet settled at boot) does not abort the retry that follows; the final
+# ExecStart is left unprefixed so a genuine persistent failure still
+# surfaces in `systemctl status`.
 ExecStart=-/usr/local/bin/aucc --restore
 ExecStart=/bin/sleep 1
 ExecStart=/usr/local/bin/aucc --restore
@@ -143,7 +144,10 @@ EOF
     cat > "$SLEEP_HOOK_DIR/aucc-lightbar" <<'EOF'
 #!/bin/sh
 # Restore Avell keyboard and lightbar after resume — managed by aucc
-[ "$1" = "post" ] && /usr/local/bin/aucc --restore
+# Starts the unit instead of calling the binary directly so the apply/retry
+# policy lives in one place; resume onto a different power source needs the
+# retry just as much as a plug/unplug does.
+[ "$1" = "post" ] && systemctl start aucc-restore.service
 EOF
     chmod +x "$SLEEP_HOOK_DIR/aucc-lightbar"
 
