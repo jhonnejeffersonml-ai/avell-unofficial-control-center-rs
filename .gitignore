@@ -105,8 +105,6 @@ venv.bak/
 .agent/
 .qwen/
 
-# Claude Code ctags index
-.claude/tags
 
 # SonarQube
 .scannerwork/
