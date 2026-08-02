@@ -81,7 +81,8 @@ The ITE Device(8291) controller is used in Tongfang gaming laptop barebones and 
 
 > The ITE 8233 lightbar hardware supports solid color only — no animations.
 > Lightbar state is saved to `/etc/aucc/lightbar.conf` and restored automatically
-> on boot via udev rule (activate with `sudo aucc --install`).
+> by `aucc-restore.service` on boot, AC plug/unplug, and resume (activate with
+> `sudo aucc --install`). See [Persistence](#persistence).
 
 ### Power & Telemetry
 
@@ -120,7 +121,7 @@ The install script:
 2. Installs binaries to `/usr/local/bin/`
 3. Installs udev rules (`/etc/udev/rules.d/70-avell-hid.rules`)
 4. Installs polkit policy for passwordless root via `pkexec`
-5. Creates `/etc/aucc/` for lightbar persistence config
+5. Creates `/etc/aucc/` for keyboard and lightbar persistence config
 6. Adds user to the `plugdev` group
 
 ### Install from pre-built binaries
@@ -142,16 +143,33 @@ sudo aucc --uninstall      # removes udev rules + /usr/local/bin/aucc
 sudo aucc-ui --uninstall   # removes /usr/local/bin/aucc-ui
 ```
 
-### Enable lightbar boot restore
+### Persistence
 
-After installation, activate automatic lightbar state restore on boot:
+Keyboard and lightbar state are saved to `/etc/aucc/keyboard.conf` and
+`/etc/aucc/lightbar.conf` on every applied command, and restored automatically
+by `aucc-restore.service` at three moments:
+
+- boot, when the ITE devices are detected;
+- AC adapter plug/unplug;
+- resume from suspend/hibernate.
+
+The third case exists because the laptop's EC (Embedded Controller) blanks
+the keyboard backlight on power events, ignoring whatever is stored in the
+keyboard controller's EEPROM. Without the service, the keyboard would stay
+dark when booting on battery.
+
+The EC blanks the backlight once, shortly *after* the power event, so the
+service applies the saved state, waits 1 second, and applies it again to win
+that race — a brief flicker right at the power event is expected.
+
+`--save` still writes to the keyboard's EEPROM and is independent of this: it
+helps the backlight appear earlier during boot, before the service runs.
+
+Activate with:
 
 ```bash
 sudo aucc --install
 ```
-
-This writes the udev rule that runs `aucc --lb-restore` whenever the ITE 8233
-device is detected (i.e., on every boot).
 
 ## Usage
 
@@ -302,7 +320,7 @@ is not yet fully documented.
 - ✅ Interactive TUI with live keyboard preview
 - ✅ Front LED lightbar control (color + brightness)
 - ✅ Lightbar sync with keyboard color
-- ✅ **Lightbar software persistence** — state saved to `/etc/aucc/lightbar.conf`, restored on boot via udev
+- ✅ **Keyboard and lightbar software persistence** — state saved to `/etc/aucc/keyboard.conf` and `/etc/aucc/lightbar.conf`, restored by `aucc-restore.service` on boot, AC plug/unplug, and resume from suspend/hibernate
 - ✅ `teclado` launcher script (pkexec-based, no sudo prompt)
 - ✅ **Power profiles** — Silent / Balanced / Turbo (RAPL PL1/PL2 + CPU governor + EPP)
 - ✅ **Telemetry dashboard** — CPU/GPU/RAM/NVMe/Battery in real-time (TUI)
