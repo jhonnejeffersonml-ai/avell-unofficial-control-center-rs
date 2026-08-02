@@ -1,3 +1,4 @@
+use super::parse_kv;
 use std::fs;
 use std::io::Write;
 use std::path::Path;
@@ -33,62 +34,37 @@ impl PartialEq for LightbarConfig {
     }
 }
 
-/// Load lightbar config from `/etc/aucc/lightbar.conf`.
-/// Returns `LightbarConfig::default()` if the file does not exist or cannot be parsed.
-pub fn load() -> LightbarConfig {
-    parse_file(CONFIG_PATH).unwrap_or_default()
-}
-
-/// Load config and return Result (used by TUI to check if file exists).
-pub fn load_file() -> std::io::Result<LightbarConfig> {
-    let content = fs::read_to_string(CONFIG_PATH)?;
-    let mut cfg = LightbarConfig::default();
-    for line in content.lines() {
-        let line = line.trim();
-        if line.is_empty() || line.starts_with('#') {
-            continue;
-        }
-        if let Some((key, val)) = line.split_once('=') {
-            match key.trim() {
-                "enabled"      => { if let Ok(v) = val.trim().parse() { cfg.enabled = v; } }
-                "r"            => { if let Ok(v) = val.trim().parse() { cfg.r = v; } }
-                "g"            => { if let Ok(v) = val.trim().parse() { cfg.g = v; } }
-                "b"            => { if let Ok(v) = val.trim().parse() { cfg.b = v; } }
-                "brightness"   => { if let Ok(v) = val.trim().parse() { cfg.brightness = v; } }
-                "save_eeprom"  => { if let Ok(v) = val.trim().parse() { cfg.save_eeprom = v; } }
-                _ => {}
-            }
-        }
+fn apply_pair(cfg: &mut LightbarConfig, key: &str, val: &str) {
+    match key {
+        "enabled"     => { if let Ok(v) = val.parse() { cfg.enabled = v; } }
+        "r"           => { if let Ok(v) = val.parse() { cfg.r = v; } }
+        "g"           => { if let Ok(v) = val.parse() { cfg.g = v; } }
+        "b"           => { if let Ok(v) = val.parse() { cfg.b = v; } }
+        "brightness"  => { if let Ok(v) = val.parse() { cfg.brightness = v; } }
+        "save_eeprom" => { if let Ok(v) = val.parse() { cfg.save_eeprom = v; } }
+        _ => {}
     }
-    Ok(cfg)
 }
 
-/// Internal: parse a specific file (used by tests with temp paths).
-fn parse_file_impl(path: &str) -> Option<LightbarConfig> {
-    let content = fs::read_to_string(path).ok()?;
+fn parse_file(path: &str) -> Option<LightbarConfig> {
+    let pairs = parse_kv(path)?;
     let mut cfg = LightbarConfig::default();
-    for line in content.lines() {
-        let line = line.trim();
-        if line.is_empty() || line.starts_with('#') {
-            continue;
-        }
-        if let Some((key, val)) = line.split_once('=') {
-            match key.trim() {
-                "enabled"      => { if let Ok(v) = val.trim().parse() { cfg.enabled = v; } }
-                "r"            => { if let Ok(v) = val.trim().parse() { cfg.r = v; } }
-                "g"            => { if let Ok(v) = val.trim().parse() { cfg.g = v; } }
-                "b"            => { if let Ok(v) = val.trim().parse() { cfg.b = v; } }
-                "brightness"   => { if let Ok(v) = val.trim().parse() { cfg.brightness = v; } }
-                "save_eeprom"  => { if let Ok(v) = val.trim().parse() { cfg.save_eeprom = v; } }
-                _ => {}
-            }
-        }
+    for (k, v) in pairs {
+        apply_pair(&mut cfg, &k, &v);
     }
     Some(cfg)
 }
 
-fn parse_file(path: &str) -> Option<LightbarConfig> {
-    parse_file_impl(path)
+/// Load lightbar config from `/etc/aucc/lightbar.conf`.
+/// Returns `LightbarConfig::default()` if the file is missing or unparseable.
+pub fn load() -> LightbarConfig {
+    parse_file(CONFIG_PATH).unwrap_or_default()
+}
+
+/// Load config and return Result (used by the TUI to check the file exists).
+pub fn load_file() -> std::io::Result<LightbarConfig> {
+    parse_file(CONFIG_PATH)
+        .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::NotFound, CONFIG_PATH))
 }
 
 /// Persist lightbar state to `/etc/aucc/lightbar.conf`.
