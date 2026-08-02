@@ -4,9 +4,14 @@
 //! be inspected and edited by hand under /etc/aucc/.
 
 pub mod lightbar;
+pub mod keyboard;
 
 pub use lightbar::{
     CONFIG_PATH, LightbarConfig, load, load_file, save, save_to,
+};
+pub use keyboard::{
+    KEYBOARD_CONFIG_PATH, KeyboardConfig, KeyboardMode, load_keyboard, save_keyboard,
+    save_keyboard_to,
 };
 
 use std::fs;
