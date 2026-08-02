@@ -153,14 +153,17 @@ by `aucc-restore.service` at three moments:
 - AC adapter plug/unplug;
 - resume from suspend/hibernate.
 
-The third case exists because the laptop's EC (Embedded Controller) blanks
-the keyboard backlight on power events, ignoring whatever is stored in the
-keyboard controller's EEPROM. Without the service, the keyboard would stay
-dark when booting on battery.
+All three cases exist because the laptop's EC (Embedded Controller) blanks the
+keyboard backlight on power events, ignoring whatever is stored in the keyboard
+controller's EEPROM. Without the service, the keyboard would stay dark when
+booting on battery; resume is covered too because a machine can wake up on a
+different power source than it slept on.
 
-The EC blanks the backlight once, shortly *after* the power event, so the
-service applies the saved state, waits 1 second, and applies it again to win
-that race — a brief flicker right at the power event is expected.
+The EC was observed to blank the backlight once, shortly *after* the event,
+rather than suppressing it continuously — so the service applies the saved
+state, waits 1 second, and applies it again. How long after the event the EC
+blanks has not been measured, so the 1 second is a first choice rather than a
+tuned value, and a brief flicker at the power event is possible.
 
 `--save` still writes to the keyboard's EEPROM and is independent of this: it
 helps the backlight appear earlier during boot, before the service runs.
