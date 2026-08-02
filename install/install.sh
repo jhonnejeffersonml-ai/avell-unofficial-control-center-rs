@@ -117,6 +117,8 @@ After=systemd-udev-settle.service
 [Service]
 Type=oneshot
 ExecStart=/usr/local/bin/aucc --restore
+ExecStart=/bin/sleep 1
+ExecStart=/usr/local/bin/aucc --restore
 StandardError=journal
 
 [Install]
