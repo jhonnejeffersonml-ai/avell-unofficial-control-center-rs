@@ -66,7 +66,10 @@ const RESTORE_SLEEP_HOOK: &str = "\
 # Starts the unit instead of calling the binary directly so the apply/retry
 # policy lives in one place; resume onto a different power source needs the
 # retry just as much as a plug/unplug does.
-[ \"$1\" = \"post\" ] && systemctl start aucc-restore.service
+# --no-block: systemd-sleep does not finish the resume until every hook returns,
+# and the unit's apply/sleep/apply chain takes ~1.1s. The exit status is
+# intentionally not observed — the unit journals its own result.
+[ \"$1\" = \"post\" ] && systemctl start --no-block aucc-restore.service
 ";
 
 pub const UDEV_RULE_PATH: &str       = "/etc/udev/rules.d/70-avell-hid.rules";
