@@ -566,18 +566,6 @@ pub fn read_top_processes(max_count: usize) -> Vec<ProcessInfo> {
     processes
 }
 
-fn num_cpus() -> usize {
-    // Simple fallback if num_cpus crate is not available
-    fs::read_dir("/sys/devices/system/cpu")
-        .map(|d| d.filter(|e| {
-            e.as_ref().ok().map(|e| {
-                let binding = e.file_name();
-                let name = binding.to_string_lossy();
-                name.starts_with("cpu") && name[3..].parse::<u32>().is_ok()
-            }).unwrap_or(false)
-        }).count())
-        .unwrap_or(1)
-}
 
 /// Read system load averages from `/proc/loadavg`.
 pub fn read_system() -> SystemInfo {

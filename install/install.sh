@@ -70,7 +70,7 @@ build_rust() {
     done
 
     pushd "$RUST_DIR" > /dev/null
-    cargo build --release
+    sudo -u "$REAL_USER" env PATH="$REAL_HOME/.cargo/bin:$PATH" HOME="$REAL_HOME" cargo build --release
     popd > /dev/null
     info "Build concluído."
 }
