@@ -41,7 +41,15 @@ After=systemd-udev-settle.service
 
 [Service]
 Type=oneshot
-ExecStart=/usr/local/bin/aucc --restore
+# The EC blanks the keyboard backlight once, shortly after a power event
+# (AC plug/unplug), overriding whatever state we just applied. We reapply
+# the state again after a short delay to win that race. The delay value
+# (1s) comes from a measurement on the target machine — do not tune it
+# blindly. The first ExecStart is prefixed with '-' so a transient failure
+# (e.g. the keyboard USB device not yet settled at boot) does not abort the
+# retry that follows; the final ExecStart is left unprefixed so a genuine
+# persistent failure still surfaces in `systemctl status`.
+ExecStart=-/usr/local/bin/aucc --restore
 ExecStart=/bin/sleep 1
 ExecStart=/usr/local/bin/aucc --restore
 StandardError=journal
