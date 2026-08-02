@@ -1,5 +1,6 @@
 pub mod colors;
 pub mod effects;
+pub mod restore;
 
 use rusb::{DeviceHandle, GlobalContext};
 
