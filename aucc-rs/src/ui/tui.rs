@@ -22,7 +22,7 @@ use ratatui::{
     Frame, Terminal,
 };
 
-use crate::config::{self, LightbarConfig};
+use crate::config::{self, KeyboardConfig, KeyboardMode, LightbarConfig};
 use crate::keyboard::{
     colors::get_color,
     effects::{effect_payload, Effect, WaveDirection},
@@ -343,6 +343,16 @@ impl AppState {
                     save,
                 );
                 let _ = self.usb_tx.send(UsbCmd::Effect(payload));
+                let _ = config::save_keyboard(&KeyboardConfig {
+                    mode: KeyboardMode::Effect,
+                    effect: self.effect.to_string(),
+                    speed: self.speed,
+                    brightness: self.brightness,
+                    direction: format!("{:?}", self.wave_dir).to_lowercase(),
+                    letter: self.eff_variant,
+                    reactive: self.reactive,
+                    ..Default::default()
+                });
                 let reactive_label = if self.reactive { " (reativo)" } else { "" };
                 self.status = format!("Efeito '{}'{reactive_label} aplicado!", self.effect);
                 self._mode = None;
@@ -360,6 +370,13 @@ impl AppState {
                     brightness: self.brightness,
                     horizontal: true,
                     save,
+                });
+                let _ = config::save_keyboard(&KeyboardConfig {
+                    mode: KeyboardMode::HAlt,
+                    r: ra, g: ga, b: ba,
+                    r2: rb, g2: gb, b2: bb,
+                    brightness: self.brightness,
+                    ..Default::default()
                 });
                 self.status = format!(
                     "Alternado H: {} / {} aplicado.",
@@ -381,6 +398,13 @@ impl AppState {
                     horizontal: false,
                     save,
                 });
+                let _ = config::save_keyboard(&KeyboardConfig {
+                    mode: KeyboardMode::VAlt,
+                    r: ra, g: ga, b: ba,
+                    r2: rb, g2: gb, b2: bb,
+                    brightness: self.brightness,
+                    ..Default::default()
+                });
                 self.status = format!(
                     "Alternado V: {} / {} aplicado.",
                     COLOR_NAMES[self.color_a], COLOR_NAMES[self.color_b]
@@ -395,6 +419,12 @@ impl AppState {
                     b,
                     brightness: self.brightness,
                     save,
+                });
+                let _ = config::save_keyboard(&KeyboardConfig {
+                    mode: KeyboardMode::Mono,
+                    r, g, b,
+                    brightness: self.brightness,
+                    ..Default::default()
                 });
                 self.status = format!("Cor '{}' aplicada!", COLOR_NAMES[self.color_a]);
             }
@@ -433,6 +463,10 @@ impl AppState {
                     "Sair" => return true,
                     "Teclado — Desligar" => {
                         let _ = self.usb_tx.send(UsbCmd::Disable);
+                        let _ = config::save_keyboard(&KeyboardConfig {
+                            mode: KeyboardMode::Off,
+                            ..config::load_keyboard()
+                        });
                         self.status = "Teclado desligado.".into();
                     }
                     "Lightbar — Desligar" => {
