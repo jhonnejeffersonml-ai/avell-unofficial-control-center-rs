@@ -264,6 +264,21 @@ mod tests {
         assert_eq!(parse_keyboard_file(&temp_path("missing")), None);
     }
 
+    /// A missing file and a file that says `mode=off` must be distinguishable:
+    /// the restore path leaves the keyboard untouched in the first case and
+    /// deliberately turns it off in the second.
+    #[test]
+    fn absent_file_is_distinguishable_from_saved_off() {
+        cleanup("absent_vs_off");
+        assert_eq!(parse_keyboard_file(&temp_path("absent_vs_off")), None);
+
+        let cfg = KeyboardConfig { mode: KeyboardMode::Off, ..Default::default() };
+        save_keyboard_to(&cfg, &temp_path("absent_vs_off")).unwrap();
+        let loaded = parse_keyboard_file(&temp_path("absent_vs_off"));
+        assert_eq!(loaded.map(|c| c.mode), Some(KeyboardMode::Off));
+        cleanup("absent_vs_off");
+    }
+
     #[test]
     fn empty_file_yields_default() {
         cleanup("empty");

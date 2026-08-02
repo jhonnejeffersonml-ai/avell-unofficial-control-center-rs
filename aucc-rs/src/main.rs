@@ -508,7 +508,18 @@ fn print_telemetry() {
 /// Reapply the persisted keyboard state. Logs to stderr so the systemd unit
 /// leaves a trace in journalctl.
 fn run_kb_restore() -> Result<(), Box<dyn std::error::Error>> {
-    let cfg = config::load_keyboard();
+    // An absent (or unreadable) file is NOT the same as a saved "off": without
+    // a saved state we must leave the keyboard alone, otherwise a restore would
+    // blank a backlight the EEPROM had lit. `load_keyboard()` defaults to Off,
+    // so the raw parse is used here to tell the two cases apart.
+    let Some(cfg) = config::keyboard::parse_keyboard_file(config::keyboard::KEYBOARD_CONFIG_PATH)
+    else {
+        eprintln!(
+            "aucc --kb-restore: nenhum estado salvo em {} — teclado nao alterado",
+            config::keyboard::KEYBOARD_CONFIG_PATH
+        );
+        return Ok(());
+    };
     eprintln!(
         "aucc --kb-restore: mode={:?} rgb=({},{},{}) brightness={} effect={}",
         cfg.mode, cfg.r, cfg.g, cfg.b, cfg.brightness, cfg.effect
