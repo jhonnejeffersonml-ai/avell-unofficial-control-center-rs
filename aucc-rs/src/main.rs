@@ -1,4 +1,4 @@
-use aucc_rs::config::{self, LightbarConfig};
+use aucc_rs::config::{self, KeyboardConfig, KeyboardMode, LightbarConfig};
 use aucc_rs::keyboard::{KeyboardDevice, colors::get_color, effects::{Effect, WaveDirection, effect_payload}};
 use aucc_rs::lightbar;
 use aucc_rs::power::{self, PowerProfile};
@@ -105,7 +105,7 @@ TUI INTERATIVO:\n  \
 )]
 // Group is kept (without required) to document mutual exclusivity.
 // arg_required_else_help = true on the command handles the no-args case.
-#[command(group(ArgGroup::new("action").args(["color","h_alt","v_alt","style","disable","off","profile","tdp","telemetry","lb_restore","lb_disable","lb_color","version","install","uninstall"])))]
+#[command(group(ArgGroup::new("action").args(["color","h_alt","v_alt","style","disable","off","profile","tdp","telemetry","lb_restore","lb_disable","lb_color","version","install","uninstall","kb_restore","restore"])))]
 struct Cli {
     /// Cor sólida do teclado: red, green, blue, teal, purple, pink, yellow, white, orange …
     #[arg(short = 'c', long, value_name = "COR")]
@@ -188,6 +188,17 @@ struct Cli {
     #[arg(long, value_parser = clap::value_parser!(u8).range(0..=100), default_value = "50", value_name = "0-100")]
     lb_brightness: u8,
 
+    /// [Teclado] Restaurar estado salvo de /etc/aucc/keyboard.conf
+    ///
+    /// Reaplica a última configuração aplicada pelo usuário. Executado
+    /// automaticamente no boot, ao trocar entre AC e bateria e após suspend.
+    #[arg(long)]
+    kb_restore: bool,
+
+    /// Restaurar teclado e lightbar (usado pelo systemd)
+    #[arg(long)]
+    restore: bool,
+
     // ── Instalação ────────────────────────────────────────────────────────────
 
     /// Instalar systemd service, sleep hook, regra udev e binário
@@ -232,6 +243,16 @@ fn main() {
         return;
     }
 
+    if cli.restore || cli.kb_restore {
+        require_root();
+        let result = if cli.restore { run_restore() } else { run_kb_restore() };
+        if let Err(e) = result {
+            eprintln!("{} {e}", "Erro:".red().bold());
+            std::process::exit(1);
+        }
+        return;
+    }
+
     // --off: desliga teclado + lightbar. Requer root para o teclado.
     if cli.off {
         require_root();
@@ -245,6 +266,10 @@ fn main() {
         if let Err(e) = dev.disable() {
             eprintln!("{} {e}", "Erro teclado:".red().bold());
         } else {
+            let _ = config::save_keyboard(&KeyboardConfig {
+                mode: KeyboardMode::Off,
+                ..config::load_keyboard()
+            });
             println!("{}", "Teclado desligado.".dimmed());
         }
         if let Some(path) = lightbar::find_hidraw_path() {
@@ -382,6 +407,10 @@ fn run_no_dev(cli: &Cli) -> Result<(), Box<dyn std::error::Error>> {
 fn run(dev: &KeyboardDevice, cli: &Cli) -> Result<(), Box<dyn std::error::Error>> {
     if cli.disable {
         dev.disable()?;
+        let _ = config::save_keyboard(&KeyboardConfig {
+            mode: KeyboardMode::Off,
+            ..config::load_keyboard()
+        });
         println!("{}", "Teclado desligado.".dimmed());
         return Ok(());
     }
@@ -390,12 +419,28 @@ fn run(dev: &KeyboardDevice, cli: &Cli) -> Result<(), Box<dyn std::error::Error>
         let effect = Effect::from_str(name).ok_or_else(|| format!("Efeito desconhecido: '{name}'"))?;
         let dir = cli.direction.to_wave_dir();
         dev.apply_effect(&effect_payload(effect, cli.speed, cli.brightness, letter, dir, reactive, cli.save))?;
+        let _ = config::save_keyboard(&KeyboardConfig {
+            mode: KeyboardMode::Effect,
+            effect: name.to_string(),
+            speed: cli.speed,
+            brightness: cli.brightness,
+            direction: format!("{:?}", cli.direction).to_lowercase(),
+            letter,
+            reactive,
+            ..Default::default()
+        });
         println!("{}", format!("Efeito '{style}' aplicado.").green());
         return Ok(());
     }
     if let Some(c) = &cli.color {
         let (r, g, b) = get_color(c).ok_or_else(|| format!("Cor desconhecida: '{c}'"))?;
         dev.apply_mono_color(r, g, b, cli.brightness, cli.save)?;
+        let _ = config::save_keyboard(&KeyboardConfig {
+            mode: KeyboardMode::Mono,
+            r, g, b,
+            brightness: cli.brightness,
+            ..Default::default()
+        });
         println!("{}", format!("Cor '{c}' aplicada.").green());
         return Ok(());
     }
@@ -403,6 +448,13 @@ fn run(dev: &KeyboardDevice, cli: &Cli) -> Result<(), Box<dyn std::error::Error>
         let (ra, ga, ba) = get_color(&cols[0]).ok_or_else(|| format!("Cor desconhecida: '{}'", cols[0]))?;
         let (rb, gb, bb) = get_color(&cols[1]).ok_or_else(|| format!("Cor desconhecida: '{}'", cols[1]))?;
         dev.apply_alt_color(ra, ga, ba, rb, gb, bb, cli.brightness, true, cli.save)?;
+        let _ = config::save_keyboard(&KeyboardConfig {
+            mode: KeyboardMode::HAlt,
+            r: ra, g: ga, b: ba,
+            r2: rb, g2: gb, b2: bb,
+            brightness: cli.brightness,
+            ..Default::default()
+        });
         println!("{}", format!("Alternado H: {} / {} aplicado.", cols[0], cols[1]).green());
         return Ok(());
     }
@@ -410,6 +462,13 @@ fn run(dev: &KeyboardDevice, cli: &Cli) -> Result<(), Box<dyn std::error::Error>
         let (ra, ga, ba) = get_color(&cols[0]).ok_or_else(|| format!("Cor desconhecida: '{}'", cols[0]))?;
         let (rb, gb, bb) = get_color(&cols[1]).ok_or_else(|| format!("Cor desconhecida: '{}'", cols[1]))?;
         dev.apply_alt_color(ra, ga, ba, rb, gb, bb, cli.brightness, false, cli.save)?;
+        let _ = config::save_keyboard(&KeyboardConfig {
+            mode: KeyboardMode::VAlt,
+            r: ra, g: ga, b: ba,
+            r2: rb, g2: gb, b2: bb,
+            brightness: cli.brightness,
+            ..Default::default()
+        });
         println!("{}", format!("Alternado V: {} / {} aplicado.", cols[0], cols[1]).green());
         return Ok(());
     }
@@ -441,6 +500,59 @@ fn print_telemetry() {
         let epp = aucc_rs::power::read_epp().unwrap_or_else(|| "?".into());
         println!("TDP  PL1={:.0}W  PL2={:.0}W  ({})  governor={}  epp={}",
             lim.pl1_w, lim.pl2_w, prof_name, gov, epp);
+    }
+}
+
+// ── restore ───────────────────────────────────────────────────────────────────
+
+/// Reapply the persisted keyboard state. Logs to stderr so the systemd unit
+/// leaves a trace in journalctl.
+fn run_kb_restore() -> Result<(), Box<dyn std::error::Error>> {
+    let cfg = config::load_keyboard();
+    eprintln!(
+        "aucc --kb-restore: mode={:?} rgb=({},{},{}) brightness={} effect={}",
+        cfg.mode, cfg.r, cfg.g, cfg.b, cfg.brightness, cfg.effect
+    );
+    let dev = KeyboardDevice::open()?;
+    aucc_rs::keyboard::restore::apply(&dev, &cfg)?;
+    Ok(())
+}
+
+/// Restore both devices. Used by aucc-restore.service. A failure on one device
+/// must not stop the other, so errors are reported and collected, not raised
+/// on the first occurrence.
+fn run_restore() -> Result<(), Box<dyn std::error::Error>> {
+    let mut failed = Vec::new();
+
+    match lightbar::find_hidraw_path() {
+        Some(path) => {
+            let cfg = config::load();
+            eprintln!(
+                "aucc --restore: lightbar enabled={} rgb=({},{},{}) brightness={}",
+                cfg.enabled, cfg.r, cfg.g, cfg.b, cfg.brightness
+            );
+            let res = if cfg.enabled {
+                lightbar::apply_color(&path, cfg.r, cfg.g, cfg.b, cfg.brightness)
+            } else {
+                lightbar::disable(&path)
+            };
+            if let Err(e) = res {
+                eprintln!("{} {e}", "Erro lightbar:".red().bold());
+                failed.push("lightbar");
+            }
+        }
+        None => eprintln!("aucc --restore: lightbar nao encontrada, ignorando"),
+    }
+
+    if let Err(e) = run_kb_restore() {
+        eprintln!("{} {e}", "Erro teclado:".red().bold());
+        failed.push("teclado");
+    }
+
+    if failed.is_empty() {
+        Ok(())
+    } else {
+        Err(format!("falha ao restaurar: {}", failed.join(", ")).into())
     }
 }
 
