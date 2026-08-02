@@ -89,13 +89,6 @@ pub fn install(current_exe: &std::path::Path, bin_dest: &str) -> Result {
     fs::write(UDEV_RULE_PATH, UDEV_RULES)
         .map_err(|e| format!("Erro ao escrever regra udev: {e}"))?;
 
-    // 3b. Migration: drop the pre-0.2 unit so two services do not race to
-    // restore the same devices.
-    let _ = Command::new("systemctl")
-        .args(["disable", "--now", "aucc-lightbar-restore.service"])
-        .status();
-    let _ = fs::remove_file(OLD_RESTORE_SERVICE_PATH);
-
     // 4. systemd service (boot restore).
     fs::create_dir_all("/etc/systemd/system")
         .map_err(|e| format!("Erro ao criar /etc/systemd/system: {e}"))?;
@@ -130,12 +123,27 @@ pub fn install(current_exe: &std::path::Path, bin_dest: &str) -> Result {
         .ok_or_else(|| "udevadm control --reload-rules retornou erro".to_string())?;
 
     Command::new("udevadm")
-        .args(["trigger", "--subsystem-match=usb", "--subsystem-match=hidraw"])
+        .args([
+            "trigger",
+            "--subsystem-match=usb",
+            "--subsystem-match=hidraw",
+            "--subsystem-match=power_supply",
+        ])
         .status()
         .map_err(|e| format!("udevadm trigger falhou: {e}"))?
         .success()
         .then_some(())
         .ok_or_else(|| "udevadm trigger retornou erro".to_string())?;
+
+    // 8. Migration: drop the pre-0.2 unit now that the new one is up and
+    // running, so two services never race to restore the same devices. Done
+    // last (errors ignored) so a failure earlier leaves the old, still-
+    // functional unit in place instead of a half-migrated system with
+    // neither unit registered.
+    let _ = Command::new("systemctl")
+        .args(["disable", "--now", "aucc-lightbar-restore.service"])
+        .status();
+    let _ = fs::remove_file(OLD_RESTORE_SERVICE_PATH);
 
     Ok(format!("systemd service habilitado ✔  |  udev recarregado ✔  |  {bin_msg}"))
 }

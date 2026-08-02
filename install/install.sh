@@ -108,10 +108,6 @@ install_udev() {
 install_systemd() {
     info "Instalando systemd units para restauração do teclado e da lightbar..."
 
-    # Migration: remove the pre-0.2 unit.
-    systemctl disable --now aucc-lightbar-restore.service 2>/dev/null || true
-    rm -f "$SYSTEMD_DIR/aucc-lightbar-restore.service"
-
     # Boot-restore service — runs after udev settled, triggered also via SYSTEMD_WANTS.
     cat > "$SYSTEMD_DIR/aucc-restore.service" <<'EOF'
 [Unit]
@@ -140,6 +136,12 @@ EOF
     systemctl enable --now aucc-restore.service
     info "systemd service habilitado: aucc-restore.service"
     info "sleep hook instalado: $SLEEP_HOOK_DIR/aucc-lightbar"
+
+    # Migration: remove the pre-0.2 unit now that the new one is up and
+    # running (errors ignored — a missing old unit is the normal case on
+    # fresh installs).
+    systemctl disable --now aucc-lightbar-restore.service 2>/dev/null || true
+    rm -f "$SYSTEMD_DIR/aucc-lightbar-restore.service"
 }
 
 install_polkit() {
